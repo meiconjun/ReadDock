@@ -1,0 +1,16 @@
+{
+  "id": "com.example.source",
+  "name": "Example Source",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "baseUrl": "https://example.com",
+  "domains": ["example.com"],
+  "capabilities": ["search", "detail", "chapters", "pages"],
+  "permissions": ["network"],
+  "rateLimit": {
+    "requestsPerMinute": 20,
+    "concurrency": 2
+  },
+  "requiresUserInteraction": false,
+  "license": "MIT"
+}

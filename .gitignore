@@ -1,0 +1,22 @@
+# Gradle and Kotlin build output
+.gradle/
+.kotlin/
+**/build/
+
+# Android Studio / local machine configuration
+.idea/
+*.iml
+local.properties
+
+# Generated APKs and signing material
+*.apk
+*.aab
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+
+# Local emulator captures and temporary files
+*.hprof
+*.log

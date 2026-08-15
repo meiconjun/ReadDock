@@ -1,0 +1,9 @@
+{
+  "contentAuthorization": "local synthetic fixture owned by the ComicHub project",
+  "expected": {
+    "searchResults": 1,
+    "title": "星海信使",
+    "chapters": 1,
+    "pages": 2
+  }
+}

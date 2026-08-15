@@ -1,0 +1,20 @@
+{
+  "manifest": {
+    "id": "com.example.script-source",
+    "name": "Example Script Source",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "baseUrl": "https://example.com",
+    "domains": ["example.com"],
+    "capabilities": ["search", "detail", "chapters", "pages"],
+    "permissions": ["network"],
+    "rateLimit": {
+      "requestsPerMinute": 20,
+      "concurrency": 2
+    },
+    "requiresUserInteraction": false,
+    "license": "MIT"
+  },
+  "maxInstructions": 100000,
+  "script": "function search(ctx, query, page) {\n  var html = ctx.http.get('/search?q=' + ctx.url.encode(query) + '&page=' + page);\n  return ctx.html(html).select('.comic-card').map(function(item) {\n    return {\n      title: item.selectText('.title'),\n      url: item.attr('data-url'),\n      cover: item.selectAttr('img', 'src'),\n      tags: item.select('.tag').map(function(tag) { return tag.text(); })\n    };\n  });\n}\n\nfunction detail(ctx, url) {\n  var doc = ctx.html(ctx.http.get(url));\n  return {\n    title: doc.selectText('h1'),\n    author: doc.selectText('.author'),\n    description: doc.selectText('.description'),\n    cover: doc.selectAttr('img.cover', 'src'),\n    chapters: doc.select('.chapter').map(function(item) {\n      return { title: item.selectText('.chapter-title'), url: item.attr('data-url') };\n    })\n  };\n}\n\nfunction pages(ctx, url) {\n  return ctx.html(ctx.http.get(url)).select('.page').map(function(item) {\n    return { url: item.attr('data-src') || item.attr('src'), text: item.text() };\n  });\n}"
+}

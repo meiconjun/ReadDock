@@ -1,0 +1,486 @@
+# ComicHub 迭代文档
+
+这是一份持续维护的项目交接文档。每次开发结束后记录本次迭代的目标、实际完成内容、验证结果和下一步，避免项目依赖单次会话上下文。
+
+## 项目状态
+
+- 项目代号：ComicHub
+- 平台：Android
+- 当前阶段：MVP 阅读器、本地数据与源可观测性
+- 当前版本：0.1.0 prototype
+- 最近构建：Debug APK 构建成功
+- 当前 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+## 迭代记录
+
+### Iteration 0：项目初始化
+
+状态：已完成
+
+完成内容：
+
+- 建立 Android 多模块工程
+- 添加 Jetpack Compose 应用入口和基础页面
+- 完成搜索、详情、章节、阅读、书架原型闭环
+- 定义 `ComicSource`、`ComicSummary`、`ComicDetail`、`Chapter`、`ComicPage`
+- 添加本地 `MockSource`
+- 添加插件 manifest 和权限校验基础
+
+验证结果：
+
+- Android Studio、SDK Platform 35、Build Tools 35.0.0、Gradle 8.9、Java 17 已配置
+- `:core:source-runtime:test` 通过
+- `:app:assembleDebug` 通过
+
+### Iteration 1：网络稳定性与声明式源
+
+状态：已完成
+
+完成内容：
+
+- 实现 `NetworkGateway`
+- 按域名限速和并发控制
+- 公共请求缓存；带会话请求默认不进入缓存
+- 429/5xx 有限重试和指数退避
+- 连续失败熔断
+- 实现 `UrlConnectionTransport`
+- 实现 `DeclarativeSource`
+- 普通 HTML 源只需配置 URL 模板和 CSS 选择器
+- 添加 NetworkGateway 和声明式解析器测试
+- 添加 Android Internet 权限
+
+关键文件：
+
+- `core/source-runtime/.../NetworkGateway.kt`
+- `core/source-runtime/.../UrlConnectionTransport.kt`
+- `core/source-runtime/.../DeclarativeSource.kt`
+- `core/source-runtime/.../NetworkGatewayTest.kt`
+- `core/source-runtime/.../DeclarativeSourceTest.kt`
+
+验证结果：
+
+- 8 个核心单元测试通过
+- `:app:assembleDebug` 通过
+
+### Iteration 2：JSON 插件包
+
+状态：已完成
+
+目标：
+
+- 将声明式源从 Kotlin 配置对象升级为 JSON 插件包
+- 加载前验证插件 API 版本、HTTPS、域名、权限和选择器配置
+- 提供可复制的示例插件包
+- 为后续插件仓库和 App 内插件管理页面提供基础
+
+实际完成：
+
+- 为 manifest、能力、权限和限速模型加入 JSON 序列化
+- 实现 `PluginPackageLoader`
+- 加载前校验插件 id、HTTPS、域名、API 版本和选择器配置
+- 添加 `plugin-sdk/package.example.json`
+- 增加合法 JSON 插件加载测试
+- 增加不安全 manifest 拒绝测试
+
+本次未完成：
+
+- JavaScript 插件沙箱
+- 远程插件仓库
+- 插件签名和更新回滚
+- 真实网站源适配
+
+验证结果：
+
+- 10 个 `:core:source-runtime:test` 测试通过
+- `:app:assembleDebug` 通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 3：本地插件目录与管理页面
+
+状态：已完成
+
+完成内容：
+
+- 实现 `LocalPluginStore`
+- 插件保存到 App 私有目录，不需要存储权限
+- 支持本地 JSON 文件导入
+- 支持插件启用、停用和卸载
+- 实现动态 `SourceRegistry`
+- 启用插件后加入搜索源
+- 安装、启用、停用或卸载后自动刷新当前搜索结果
+- 新增 App 内“插件”页面
+- 显示内置源、已安装插件、版本和启用状态
+- 增加插件存储和非法包测试
+
+关键文件：
+
+- `core/source-runtime/.../LocalPluginStore.kt`
+- `core/source-runtime/.../SourceRegistry.kt`
+- `app/.../MainViewModel.kt`
+- `app/.../ui/ComicHubApp.kt`
+
+验证结果：
+
+- 12 个 `:core:source-runtime:test` 测试通过
+- `:app:assembleDebug` 通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 4：插件签名与远程仓库基础
+
+状态：已完成
+
+完成内容：
+
+- 实现 RSA `SHA256withRSA` 插件签名校验
+- 实现可信公钥信任库和 `keyId`
+- 支持签名信封格式
+- 本地开发包仍允许未签名导入，远程安全模式必须签名
+- 实现插件仓库索引解析
+- 校验仓库插件下载地址必须使用 HTTPS
+- 校验插件 SHA-256
+- 实现版本比较和更新检测
+- 实现远程索引/插件下载客户端
+- 添加签名、版本、索引、哈希和下载测试
+
+关键文件：
+
+- `core/source-runtime/.../PluginSecurity.kt`
+- `core/source-runtime/.../PluginRepository.kt`
+- `core/source-runtime/.../PluginRepositoryClient.kt`
+- `plugin-sdk/repository.example.json`
+
+验证结果：
+
+- 20 个 `:core:source-runtime:test` 测试通过
+- `:app:assembleDebug` 通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 5：远程仓库与安全更新入口
+
+状态：已完成
+
+完成内容：
+
+- 在插件页面加入仓库索引 URL 配置
+- 在插件页面加入可信 RSA 公钥和 keyId 配置
+- 保存仓库配置到本地 SharedPreferences
+- 支持检查远程仓库更新
+- 显示已安装插件与远程版本差异
+- 支持下载并安装远程更新
+- 远程索引必须签名
+- 下载内容必须通过 SHA-256 校验
+- 远程插件安装强制要求插件包签名
+- 本地开发导入仍保留未签名模式
+- 增加安全安装回归测试
+
+关键文件：
+
+- `app/.../MainViewModel.kt`
+- `app/.../ui/ComicHubApp.kt`
+- `core/source-runtime/.../PluginRepositoryClient.kt`
+- `core/source-runtime/.../LocalPluginStore.kt`
+
+验证结果：
+
+- 21 个 `:core:source-runtime:test` 测试通过
+- `:app:assembleDebug` 通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 6：插件回滚与图片下载基础设施
+
+状态：已完成
+
+完成内容：
+
+- 插件更新前自动保存历史版本，支持从插件页面回滚
+- 回滚过程继续保留当前版本，便于在多个历史版本之间恢复
+- 插件卸载时清理对应历史版本，避免卸载后残留可执行配置
+- `NetworkResponse` 同时保留 UTF-8 文本和原始字节
+- 插件仓库 SHA-256 校验改用原始字节，避免二进制响应被文本转换破坏
+- 新增基于文件的图片缓存，使用 URL 的 SHA-256 作为文件名并按容量淘汰旧文件
+- 新增有并发上限、去重、缓存复用和失败状态的图片下载队列
+- 阅读页接入图片下载队列；图片失败时仍保留可显示的文本或已成功页面
+- 新增回滚、原始字节校验、缓存淘汰和下载队列测试
+
+关键文件：
+
+- `core/source-runtime/.../LocalPluginStore.kt`
+- `core/source-runtime/.../NetworkGateway.kt`
+- `core/source-runtime/.../PluginRepositoryClient.kt`
+- `core/data/.../FileImageCache.kt`
+- `core/data/.../ImageDownloadQueue.kt`
+- `app/.../MainViewModel.kt`
+- `app/.../ui/ComicHubApp.kt`
+
+验证结果：
+
+- `:core:data:test`：3 个测试通过
+- `:core:source-runtime:test`：23 个测试通过
+- 本轮核心测试合计：26 个通过，0 个失败
+- `:app:assembleDebug`：通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 7：Room 书架、阅读历史与进度
+
+状态：已完成
+
+目标：在不改变插件协议和现有阅读流程的前提下，将书架、阅读历史和阅读进度持久化到 Room。
+
+完成内容：
+
+- 将 `core:data` 升级为 Android Library，集中承载 Room 数据库和仓储；图片缓存与下载队列保持原有接口和行为
+- 设计最小数据模型：`ComicEntity`、`ChapterEntity`、`LibraryEntryEntity`、`ReadingProgressEntity`
+- 漫画、章节、书架条目和进度均使用 `sourceId + comicId (+ chapterId)` 复合键，避免不同插件的同名 ID 冲突
+- 阅读进度的 `lastReadAt` 作为阅读历史排序依据，不额外复制历史数据
+- `RoomLibraryRepository` 提供详情、章节、收藏、历史和进度恢复能力；数据库按应用私有目录持久化
+- `MainViewModel` 默认接入 Room 仓储，同时保留仓储抽象用于测试；打开详情/章节、收藏和阅读滚动都会更新持久化数据
+- 阅读页打开章节时恢复上次页码，并在滚动时保存当前页；书架页显示持久化收藏和最近阅读历史
+- 保持现有插件安装、签名、回滚、NetworkGateway、图片缓存和下载队列流程不变
+- 增加 Room Robolectric 数据库测试和 MainViewModel 注入式测试
+
+关键文件：
+
+- `core/data/.../LibraryDatabase.kt`
+- `core/data/.../LibraryEntities.kt`
+- `core/data/.../LibraryDao.kt`
+- `core/data/.../LibraryRepository.kt`
+- `core/data/.../RoomLibraryRepositoryTest.kt`
+- `app/.../MainViewModel.kt`
+- `app/.../ui/ComicHubApp.kt`
+- `app/.../MainViewModelTest.kt`
+
+验证结果：
+
+- `:core:source-runtime:test`：23 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过（图片缓存/下载 3 个，Room 1 个）
+- `:app:testDebugUnitTest`：1 个 ViewModel 测试通过
+- 本轮全量测试合计：28 个通过，0 个失败
+- `:app:assembleDebug`：通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 8：源健康状态与请求日志
+
+状态：已完成
+
+目标：在不改变插件调用和网络策略的前提下，为漫画源请求增加可观察的健康状态、耗时和结构化失败信息。
+
+完成内容：
+
+- 在 `core:source-runtime` 增加 `SourceHealthTracker`
+- `NetworkRequest` 增加可选 `sourceId`，旧调用保持兼容；未标记 sourceId 的请求按 host 归类
+- `NetworkGateway` 记录成功、缓存命中、HTTP 失败、传输失败和熔断事件
+- 记录请求次数、成功率、缓存命中次数、最近状态码、耗时、失败原因和最近 20 条日志
+- 日志只保留 URL path，不保存 query 参数、请求体或会话信息
+- App 的声明式插件 HTML 请求带上 manifest sourceId；插件仓库和图片请求仍可按 host 回退统计
+- 插件页面新增源健康状态卡片，显示成功率、请求次数、延迟和最近错误
+- 增加健康追踪器和 NetworkGateway 集成测试，验证缓存、失败统计和 query 脱敏
+
+关键文件：
+
+- `core/source-runtime/.../SourceHealth.kt`
+- `core/source-runtime/.../NetworkGateway.kt`
+- `core/source-runtime/.../SourceHealthTest.kt`
+- `app/.../MainViewModel.kt`
+- `app/.../ui/ComicHubApp.kt`
+
+验证结果：
+
+- `:core:source-runtime:test`：24 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过
+- `:app:testDebugUnitTest`：1 个测试通过
+- 本轮全量测试合计：29 个通过，0 个失败
+- `:app:assembleDebug`：通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 9：受限 JavaScript 插件运行时
+
+状态：已完成
+
+目标：在保持声明式插件、签名仓库、更新回滚和现有阅读流程兼容的前提下，为需要条件逻辑的漫画源提供受限 JavaScript 执行能力。
+
+完成内容：
+
+- 新增 `JavaScriptSourceDefinition` 和 `JavaScriptSource`，插件包通过 `script` 字段实现 `search`、`detail`、`pages` 三个同步入口
+- 使用 Rhino 解释器和指令数上限执行脚本，关闭 Java 类访问，并拒绝 `Packages`、`JavaAdapter`、动态 `Function`/`eval` 等危险入口
+- 只向脚本暴露 `ctx.http.get`、`ctx.url.encode` 和 Jsoup HTML 桥接；选择器支持 `select`、`selectText`、`selectAttr`、`text` 和 `attr`
+- 所有脚本请求仍通过现有 `fetchHtml`/NetworkGateway，URL 必须是 HTTPS 且 host 必须匹配 manifest 声明域名
+- 保持原有声明式 JSON 包解析、插件签名校验、LocalPluginStore、更新回滚和 App 插件加载路径不变
+- 新增脚本插件 SDK 示例 `plugin-sdk/package.javascript.example.json`，并补充脚本 API、沙箱限制和兼容性说明
+- 新增 JavaScript fixture、危险 token 拒绝和指令预算测试
+
+关键文件：
+
+- `core/source-runtime/.../JavaScriptSource.kt`
+- `core/source-runtime/.../PluginPackageLoader.kt`
+- `core/source-runtime/.../JavaScriptSourceTest.kt`
+- `plugin-sdk/package.javascript.example.json`
+- `plugin-sdk/README.md`
+
+验证结果：
+
+- `:core:source-runtime:test`：27 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过
+- `:app:testDebugUnitTest`：1 个测试通过
+- 本轮全量测试合计：32 个通过，0 个失败
+- `:app:assembleDebug`：通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 10：插件 CLI、离线 fixture 与打包签名工作流
+
+状态：已完成
+
+目标：把插件开发计划中的 `init`、fixture 校验、发布前验证和签名打包落地为独立 JVM CLI，不改变 App 内已有插件协议和安装流程。
+
+完成内容：
+
+- 新增 `:plugin-cli` Gradle JVM 模块，提供 `init`、`validate`、`test`、`fixture capture`、`package` 和 `keygen` 命令
+- `init` 生成可被现有运行时直接加载的声明式 `package.json`、`search.html`、`detail.html`、`pages.html` 和 README
+- `test` 通过离线 fixture 依次调用 `search`、`detail`、`pages`，覆盖声明式插件真实运行路径，不访问真实网站
+- `fixture capture` 支持复制本地快照或捕获 HTTPS 响应，默认拒绝覆盖已有文件并拒绝 HTTP URL
+- `validate` 复用 `PluginPackageLoader`，支持验证签名信封；`package` 复用现有 `SignedPluginEnvelope` 和 `SHA256withRSA`，支持 PKCS#8 PEM/DER 私钥
+- `keygen` 生成 2048 位 RSA PKCS#8 私钥和 X.509 公钥，便于建立开发/发布签名流程
+- 在 `plugin-sdk/fixtures/example-source` 增加可重复运行的声明式 fixture；增加 CLI 初始化、fixture 运行、签名校验和捕获覆盖测试
+- 保持现有声明式插件、JavaScript 插件、Room、缓存、下载队列、仓库签名、更新回滚和 App 阅读流程不变
+
+关键文件：
+
+- `plugin-cli/src/main/kotlin/com/comichub/cli/Main.kt`
+- `plugin-cli/src/test/kotlin/com/comichub/cli/CliTest.kt`
+- `plugin-sdk/fixtures/example-source/`
+- `plugin-sdk/README.md`
+
+验证结果：
+
+- `:plugin-cli:test`：3 个测试通过
+- 使用仓库示例执行 CLI `test`：fixture 通过，search=1、chapters=1、pages=2
+- `:core:source-runtime:test`：27 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过
+- `:app:testDebugUnitTest`：1 个测试通过
+- 本轮相关测试合计：35 个通过，0 个失败
+- `:plugin-cli:installDist`：通过
+- `:app:assembleDebug`：通过
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 11：Android 模拟器安装与 UI 冒烟验收
+
+状态：已完成
+
+目标：在没有真机的情况下，用 Android 模拟器验证 APK 启动、核心阅读流程、Room 恢复和主要导航页面。
+
+完成内容：
+
+- 发现本机没有 emulator、AVD 和 sdkmanager；从 Android 官方下载并校验 command-line tools，安装到现有 SDK
+- 安装 Emulator、API 35 Google APIs x86_64 系统镜像和 `ComicHub_API35` AVD
+- 安装 Android Emulator Hypervisor Driver 2.2；`emulator -accel-check` 确认 AEHD 可用
+- 安装最新 `app-debug.apk` 到 `emulator-5554` 并启动 `com.comichub.app/.MainActivity`
+- 通过截图和 ADB 检查发现页、详情/章节、阅读页、书架和插件页
+- 阅读中滚动到第 3 页后强制停止并重启 App，书架历史仍显示“第 3/6 页”，确认 Room 进度恢复
+- 全程未发现 `FATAL EXCEPTION` 或 `AndroidRuntime` 崩溃日志
+
+验证结果：
+
+- AVD：`ComicHub_API35`，设备：`emulator-5554`
+- APK 安装：成功
+- 核心 UI 冒烟流程：通过
+- Room 重启恢复：通过
+- 模拟器截图保存在本地 `build/emulator-*.png`
+
+备注：当前 UI 仍保持功能验证优先的原型形态，布局和视觉细节较为简陋；本阶段不以视觉精修为目标，待核心功能和真实授权源验证稳定后再统一设计。
+
+仍待处理：网络失败、插件导入/更新失败等异常状态的逐项 UI 验收，以及真实授权漫画源的端到端 fixture。
+
+### Iteration 12：错误状态和空结果提示优化
+
+状态：已完成
+
+目标：在保持原型 UI 方向不变的前提下，确保网络、插件和搜索异常能被用户看到并理解。
+
+完成内容：
+
+- 新增 `UiMessage` 和 `MessageTone`，区分插件/仓库操作成功提示与错误提示
+- 详情页和阅读页显示打开漫画、打开章节、图片加载或 Room 保存失败信息
+- 搜索无结果时显示明确空状态，不再只显示空白列表
+- 插件导入失败、仓库 HTTPS/key 配置错误、签名/下载失败使用错误色提示
+- 增加非法仓库 URL和非法插件导入的 ViewModel 回归测试
+- 明确记录当前 UI 仅服务于功能验收，暂不进行视觉重构
+
+关键文件：
+
+- `app/src/main/java/com/comichub/app/MainViewModel.kt`
+- `app/src/main/java/com/comichub/app/ui/ComicHubApp.kt`
+- `app/src/test/java/com/comichub/app/MainViewModelTest.kt`
+
+验证结果：
+
+- `:core:source-runtime:test`：27 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过
+- `:app:testDebugUnitTest`：3 个测试通过
+- `:plugin-cli:test`：3 个测试通过
+- 本轮相关测试合计：37 个通过，0 个失败
+- `:app:assembleDebug`：通过
+- 模拟器验证搜索不存在的 `zzz` 时显示“没有找到漫画，试试其他关键词。”，无崩溃
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+### Iteration 13：授权 fixture 契约与离线端到端校验
+
+状态：已完成
+
+目标：在不访问真实网站、不绕过登录或验证码的前提下，让插件 fixture 能记录内容来源说明，并对搜索→详情→章节页面解析结果做可重复的精确校验，为后续真实授权源接入提供安全的离线门槛。
+
+完成内容：
+
+- `plugin-cli init` 新增 `fixtures/fixture.json`，记录 `contentAuthorization` 和期望的搜索结果数、标题、章节数、页面数
+- `plugin-cli test` 在现有声明式插件运行路径上读取快照并核对上述契约，fixture 被意外改动时返回失败原因
+- 保持兼容：没有 `fixture.json` 的旧插件目录继续按原有“结果非空”规则运行
+- 为仓库示例 `plugin-sdk/fixtures/example-source` 增加来源说明和精确期望值
+- 增加契约成功、快照篡改失败和旧 fixture 兼容测试
+- 文档明确：当前示例是项目自有的合成授权 fixture，不等同于已接入真实漫画网站；真实源需在获得授权后替换快照并保留来源记录
+
+验证结果：
+
+- `:core:source-runtime:test`：27 个测试通过
+- `:core:data:testDebugUnitTest`：4 个测试通过
+- `:app:testDebugUnitTest`：3 个测试通过
+- `:plugin-cli:test`：5 个测试通过
+- 本轮相关测试合计：39 个通过，0 个失败
+- `:plugin-cli:run --args="test ../plugin-sdk/fixtures/example-source"`：通过，search=1、chapters=1、pages=2
+- `:app:assembleDebug`：通过
+- 模拟器 `ComicHub_API35` / `emulator-5554`：重新安装并启动 APK 成功，最近日志无崩溃
+- 最新 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+
+仍待处理：真实授权漫画源需要用户提供具体源、许可证明或访问凭据；在此之前只能完成本地合成 fixture 和通用接入能力。WebView 用户交互通道仍是后续工作。
+
+## 当前技术原则
+
+- 简单 HTML 源优先使用声明式 CSS 选择器
+- 复杂逻辑后续使用受限脚本，不开放任意 Android API
+- 插件只能访问 manifest 声明的域名
+- 不实现验证码绕过、代理轮换、指纹伪装或付费墙绕过
+- 所有源请求统一经过 NetworkGateway
+- 优先使用授权、公开允许访问或用户自有内容
+- 任何真实网站适配都先使用 fixture 测试，再接入 App
+
+## 下一迭代候选
+
+1. 在获得具体授权源信息后，替换合成 fixture 并完成真实源端到端验证
+2. WebView 用户交互通道和结构化 `REQUIRES_USER_INTERACTION` 错误
+3. UI 视觉和交互精修（核心功能稳定后再做）
+
+## 开发验证命令
+
+当前机器上的 Gradle 路径：
+
+```text
+C:\Gradle\gradle-8.9\bin\gradle.bat
+```
+
+常用命令：
+
+```text
+gradle :core:source-runtime:test
+gradle :core:data:testDebugUnitTest
+gradle :app:testDebugUnitTest
+gradle :app:assembleDebug
+```
+
+如果新终端没有继承环境变量，使用 Android Studio 打开项目并执行 Gradle Sync 即可。

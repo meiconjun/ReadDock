@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "comichub.example",
+  "plugins": [
+    {
+      "id": "com.example.source",
+      "name": "Example Source",
+      "version": "1.0.0",
+      "downloadUrl": "https://example.com/plugins/com.example.source.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "Replace the SHA-256 placeholder after publishing the package."
+    }
+  ]
+}
