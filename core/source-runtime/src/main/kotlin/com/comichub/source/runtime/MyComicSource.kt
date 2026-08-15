@@ -111,7 +111,7 @@ class MyComicSource(
             .map { it.text().trim() }
             .filter(String::isNotBlank)
             .distinct()
-        val chapters = document.select("a[href]")
+        val chapters = chapterLinks(document)
             .mapNotNull { anchor ->
                 val chapterUrl = canonicalChapterUrl(anchor.attr("href")) ?: return@mapNotNull null
                 val titleText = anchor.text().trim().ifBlank { return@mapNotNull null }
@@ -173,7 +173,7 @@ class MyComicSource(
         val document = Jsoup.parse(html, url)
         val hasExpectedContent = when (expected) {
             Expected.SEARCH -> document.select("a[href]").any { canonicalComicUrl(it.attr("href")) != null }
-            Expected.DETAIL -> document.select("a[href]").any { canonicalChapterUrl(it.attr("href")) != null }
+            Expected.DETAIL -> chapterLinks(document).any { canonicalChapterUrl(it.attr("href")) != null }
             Expected.PAGES -> document.select("img.page").isNotEmpty()
         }
         if (!hasExpectedContent) {
@@ -181,6 +181,15 @@ class MyComicSource(
         }
         return document
     }
+
+    /**
+     * The detail page also contains chapter links for the "推荐给你" cards.
+     * MYCOMIC renders the current comic's 单话/单行本/番外篇 groups as
+     * `div.mt-8.mb-12 > div[x-data]`; scope extraction to those groups so a
+     * recommended comic cannot be attached to the current comic.
+     */
+    private fun chapterLinks(document: Document): List<Element> =
+        document.select("div.mt-8.mb-12 > div[x-data] a[href]")
 
     private fun canonicalComicUrl(value: String): String? = canonicalPath(value, COMIC_PATH)
 

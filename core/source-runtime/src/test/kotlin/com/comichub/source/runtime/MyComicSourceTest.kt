@@ -71,8 +71,15 @@ class MyComicSourceTest {
                     <a href="/cn/comics?filter%5Btag%5D=gedou">格斗</a>
                     <a href="/cn/comics?filter%5Bcountry%5D=japan">日本</a>
                     <p>可爱又可笑的妖精与酷又神勇的黑之剑士。</p>
-                    <a href="/cn/chapters/15444">第01卷</a>
-                    <a href="/cn/chapters/806119">第380话</a>
+                    <div class="mt-8 mb-12">
+                      <div x-data="{ chapters: true }">
+                        <a href="/cn/chapters/15444">第01卷</a>
+                        <a href="/cn/chapters/806119">第380话</a>
+                      </div>
+                    </div>
+                    <div class="recommendations">
+                      <a href="/cn/chapters/900001">第01话</a>
+                    </div>
                   </main></body>
                 </html>
             """.trimIndent(),

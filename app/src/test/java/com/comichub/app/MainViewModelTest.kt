@@ -54,7 +54,11 @@ class MainViewModelTest {
                 url == MyComicSource.COMIC_URL -> """
                     <html><head><title>烙印战士 - MYCOMIC</title></head><body>
                       <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
-                      <a href="/cn/chapters/15444">第01卷</a>
+                      <div class="mt-8 mb-12">
+                        <div x-data="{ chapters: true }">
+                          <a href="/cn/chapters/15444">第01卷</a>
+                        </div>
+                      </div>
                     </body></html>
                 """.trimIndent()
                 else -> error("missing MYCOMIC test fixture: $url")
