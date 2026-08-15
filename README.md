@@ -71,7 +71,7 @@ adb -s emulator-5554 shell am start -n com.comichub.app/.MainActivity
 ```text
 :core:data:testDebugUnitTest   PASS (4 tests)
 :core:source-runtime:test       PASS (29 tests)
-:app:testDebugUnitTest         PASS (4 tests)
+:app:testDebugUnitTest         PASS (5 tests)
 :plugin-cli:test                PASS (5 tests)
 :app:assembleDebug              PASS
 ```

@@ -88,6 +88,14 @@ fun ComicHubApp() {
     val readingHistory by viewModel.readingHistory.collectAsStateWithLifecycle()
     val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
 
+    // Android's edge-swipe back gesture is dispatched through the activity's
+    // OnBackPressedDispatcher. Handle it at the app level so every nested
+    // screen follows the same in-app navigation chain instead of finishing
+    // the activity and returning to the launcher.
+    BackHandler(enabled = viewModel.screen != AppScreen.SEARCH) {
+        viewModel.back()
+    }
+
     Scaffold(
         topBar = {
             if (viewModel.screen != AppScreen.SEARCH &&
@@ -657,8 +665,6 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             webChromeClient = WebChromeClient()
         }
     }
-
-    BackHandler { viewModel.back() }
 
     DisposableEffect(webView) {
         onDispose {

@@ -118,6 +118,20 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `back returns from detail to search instead of finishing the app`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.openComic(viewModel.results.first { it.sourceId == "com.comichub.mock" })
+        advanceUntilIdle()
+        assertEquals(AppScreen.DETAIL, viewModel.screen)
+
+        viewModel.back()
+
+        assertEquals(AppScreen.SEARCH, viewModel.screen)
+    }
+
+    @Test
     fun `invalid repository url becomes an error message`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
