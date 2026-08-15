@@ -1,5 +1,7 @@
 # ComicHub Plugin SDK 草案
 
+完整开发规范见 [项目插件开发手册](../docs/PLUGIN_DEVELOPMENT.md)。本文件保留 SDK 协议和 CLI 示例，手册负责数据契约、解析边界、测试和发布要求。
+
 插件开发者只需要实现搜索、详情和章节图片解析，不需要处理书架、下载、缓存和阅读器。
 
 第一版协议采用受限 TypeScript/JavaScript 风格，最终由 App 内的沙箱运行时执行。插件只能访问 `manifest.json` 中声明的域名和能力。

@@ -41,6 +41,8 @@ comic-source package example-source dist/example-source.json --private-key signi
 
 `package` 默认输出未签名 JSON；提供 `--private-key` 和 `--key-id` 时输出现有运行时支持的 `SignedPluginEnvelope`。私钥支持 PKCS#8 PEM 或 DER，公钥可用于 `validate --require-signature --public-key ... --key-id ...`。`test` 读取 `search.html`、`detail.html`、`pages.html` 和可选的 `fixture.json`；若存在后者，还会核对内容来源说明和期望解析结果，不会访问真实网站。当前仓库示例使用项目自有合成内容，真实授权源仍需在获得授权后替换 fixture 并补充来源记录。
 
+插件开发规范见 [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md)，包括数据契约、选择器作用域、浏览器会话、fixture 测试和发布检查清单。
+
 ## MYCOMIC 全站数据源
 
 App 内置了 `MYCOMIC` 数据源插件。它使用站点的搜索分页、漫画详情、单话/单行本
