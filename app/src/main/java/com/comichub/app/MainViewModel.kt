@@ -17,12 +17,15 @@ import com.comichub.data.DownloadStatus
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicPage
+import com.comichub.source.api.ComicSource
 import com.comichub.source.api.ComicSummary
 import com.comichub.source.api.SourceManifest
 import com.comichub.source.runtime.GatewayResult
 import com.comichub.source.runtime.InstalledPluginInfo
 import com.comichub.source.runtime.LocalPluginStore
 import com.comichub.source.runtime.MockSource
+import com.comichub.source.runtime.MyComicChallengeException
+import com.comichub.source.runtime.MyComicSource
 import com.comichub.source.runtime.NetworkGateway
 import com.comichub.source.runtime.NetworkRequest
 import com.comichub.source.runtime.NetworkRequestPolicy
@@ -49,6 +52,7 @@ enum class AppScreen {
     SEARCH,
     DETAIL,
     READER,
+    WEB_READER,
     LIBRARY,
     SOURCES
 }
@@ -69,9 +73,18 @@ private fun failureMessage(text: String) = UiMessage(text, MessageTone.ERROR)
 
 class MainViewModel(
     appContext: Context,
-    private val library: LibraryRepository = RoomLibraryRepository.create(appContext)
+    private val library: LibraryRepository = RoomLibraryRepository.create(appContext),
+    myComicSourceOverride: ComicSource? = null
 ) : ViewModel() {
     private val builtinSource = MockSource()
+    private val myComicWebSession = if (myComicSourceOverride == null) {
+        MyComicWebSession(appContext)
+    } else {
+        null
+    }
+    private val myComicSource = myComicSourceOverride ?: MyComicSource { url ->
+        myComicWebSession!!.fetchHtml(url)
+    }
     private val registry = SourceRegistry.default()
     private val repositoryPreferences = appContext.getSharedPreferences(
         "plugin_repository",
@@ -114,6 +127,8 @@ class MainViewModel(
         private set
     var query by mutableStateOf("")
         private set
+    var searchPage by mutableStateOf(1)
+        private set
     var results by mutableStateOf<List<ComicSummary>>(emptyList())
         private set
     var catalog by mutableStateOf<List<ComicSummary>>(emptyList())
@@ -142,6 +157,8 @@ class MainViewModel(
         private set
     var selectedChapter by mutableStateOf<Chapter?>(null)
         private set
+    var webReaderUrl by mutableStateOf<String?>(null)
+        private set
     var pages by mutableStateOf<List<ComicPage>>(emptyList())
         private set
     var imageBytes by mutableStateOf<Map<String, ByteArray>>(emptyMap())
@@ -160,13 +177,26 @@ class MainViewModel(
     init {
         viewModelScope.launch {
             reloadPluginSources()
-            performSearch("")
+            performSearch("", page = 1, append = false)
         }
     }
 
     fun search(value: String = query) {
         query = value
-        viewModelScope.launch { performSearch(value) }
+        searchPage = 1
+        viewModelScope.launch { performSearch(value, page = 1, append = false) }
+    }
+
+    fun nextSearchPage() {
+        if (isLoading) return
+        val nextPage = searchPage + 1
+        viewModelScope.launch { performSearch(query, page = nextPage, append = true) }
+    }
+
+    fun previousSearchPage() {
+        if (isLoading || searchPage <= 1) return
+        val previousPage = searchPage - 1
+        viewModelScope.launch { performSearch(query, page = previousPage, append = false) }
     }
 
     fun openComic(comic: ComicSummary) {
@@ -183,6 +213,10 @@ class MainViewModel(
                 }
                 screen = AppScreen.DETAIL
             } catch (sourceError: Throwable) {
+                if (sourceError is MyComicChallengeException) {
+                    webReaderUrl = sourceError.url
+                    screen = AppScreen.WEB_READER
+                }
                 errorMessage = sourceError.message ?: "打开漫画失败"
             }
             isLoading = false
@@ -194,36 +228,43 @@ class MainViewModel(
             isLoading = true
             errorMessage = null
             try {
-                val loadedPages = registry.require(chapter.sourceId).pages(chapter.id)
-                selectedChapter = chapter
-                pages = loadedPages
-                imageBytes = emptyMap()
-                readerProgressLoaded = false
-                screen = AppScreen.READER
-                val detail = selectedDetail
-                val progress = if (detail == null) {
-                    null
+                val source = registry.require(chapter.sourceId)
+                if (source.manifest.requiresUserInteraction) {
+                    selectedChapter = chapter
+                    webReaderUrl = chapter.id
+                    screen = AppScreen.WEB_READER
                 } else {
-                    try {
-                        library.saveComic(detail)
-                        library.recordChapterOpened(detail.summary, chapter, loadedPages.size)
-                    } catch (storageError: Throwable) {
-                        errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                    val loadedPages = source.pages(chapter.id)
+                    selectedChapter = chapter
+                    pages = loadedPages
+                    imageBytes = emptyMap()
+                    readerProgressLoaded = false
+                    screen = AppScreen.READER
+                    val detail = selectedDetail
+                    val progress = if (detail == null) {
                         null
+                    } else {
+                        try {
+                            library.saveComic(detail)
+                            library.recordChapterOpened(detail.summary, chapter, loadedPages.size)
+                        } catch (storageError: Throwable) {
+                            errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                            null
+                        }
                     }
-                }
-                resumePage = progress?.currentPage ?: 1
-                readerPage = resumePage
-                readerProgressLoaded = true
-                val imageUrls = loadedPages.mapNotNull(ComicPage::imageUrl)
-                if (imageUrls.isNotEmpty()) {
-                    val tasks = imageQueue.download(imageUrls)
-                    imageBytes = loadedPages.mapNotNull { page ->
-                        val url = page.imageUrl ?: return@mapNotNull null
-                        imageCache.get(url)?.let { bytes -> page.id to bytes }
-                    }.toMap()
-                    if (tasks.any { task -> task.status == DownloadStatus.FAILED }) {
-                        errorMessage = "部分页面图片加载失败，已保留可用页面"
+                    resumePage = progress?.currentPage ?: 1
+                    readerPage = resumePage
+                    readerProgressLoaded = true
+                    val imageUrls = loadedPages.mapNotNull(ComicPage::imageUrl)
+                    if (imageUrls.isNotEmpty()) {
+                        val tasks = imageQueue.download(imageUrls)
+                        imageBytes = loadedPages.mapNotNull { page ->
+                            val url = page.imageUrl ?: return@mapNotNull null
+                            imageCache.get(url)?.let { bytes -> page.id to bytes }
+                        }.toMap()
+                        if (tasks.any { task -> task.status == DownloadStatus.FAILED }) {
+                            errorMessage = "部分页面图片加载失败，已保留可用页面"
+                        }
                     }
                 }
             } catch (sourceError: Throwable) {
@@ -269,7 +310,7 @@ class MainViewModel(
                 is PluginStoreResult.Installed -> {
                     pluginMessage = infoMessage("已安装：${result.plugin.name}")
                     reloadPluginSources()
-                    performSearch(query)
+                    performSearch(query, page = 1, append = false)
                 }
                 is PluginStoreResult.Rejected -> {
                     pluginMessage = failureMessage("插件未安装：${result.errors.joinToString("；")}")
@@ -289,7 +330,7 @@ class MainViewModel(
             pluginStore.setEnabled(id, enabled)
             pluginMessage = infoMessage(if (enabled) "插件已启用" else "插件已停用")
             reloadPluginSources()
-            performSearch(query)
+            performSearch(query, page = 1, append = false)
         }
     }
 
@@ -301,7 +342,7 @@ class MainViewModel(
                 else -> pluginMessage = failureMessage("插件卸载失败")
             }
             reloadPluginSources()
-            performSearch(query)
+            performSearch(query, page = 1, append = false)
         }
     }
 
@@ -311,7 +352,7 @@ class MainViewModel(
                 is PluginStoreResult.RolledBack -> {
                     pluginMessage = infoMessage("已回滚到 ${result.plugin.version}")
                     reloadPluginSources()
-                    performSearch(query)
+                    performSearch(query, page = 1, append = false)
                 }
                 is PluginStoreResult.NoRollback -> pluginMessage = failureMessage("没有可用的历史版本")
                 else -> pluginMessage = failureMessage("插件回滚失败")
@@ -383,7 +424,7 @@ class MainViewModel(
                         is PluginStoreResult.Installed -> {
                             repositoryMessage = infoMessage("已安装 ${installed.plugin.name}")
                             reloadPluginSources()
-                            performSearch(query)
+                            performSearch(query, page = 1, append = false)
                         }
                         is PluginStoreResult.Rejected -> {
                             repositoryMessage = failureMessage(
@@ -418,6 +459,7 @@ class MainViewModel(
     fun back() {
         screen = when (screen) {
             AppScreen.READER -> AppScreen.DETAIL
+            AppScreen.WEB_READER -> AppScreen.DETAIL
             AppScreen.DETAIL -> AppScreen.SEARCH
             AppScreen.SEARCH, AppScreen.LIBRARY, AppScreen.SOURCES -> AppScreen.SEARCH
         }
@@ -428,24 +470,35 @@ class MainViewModel(
         val report = pluginStore.loadEnabled { manifest, url ->
             fetchHtml(manifest, url)
         }
-        registry.replace(listOf(builtinSource) + report.sources)
+        registry.replace(listOf(builtinSource, myComicSource) + report.sources)
         if (report.failures.isNotEmpty()) {
             pluginMessage = failureMessage("插件加载失败：${report.failures.keys.joinToString("、")}")
         }
     }
 
-    private suspend fun performSearch(value: String) {
+    private suspend fun performSearch(value: String, page: Int, append: Boolean) {
         isLoading = true
         errorMessage = null
         val found = mutableListOf<ComicSummary>()
         val failures = mutableListOf<String>()
         registry.sources.forEach { source ->
-            runCatching { source.search(value) }
+            runCatching { source.search(value, page) }
                 .onSuccess(found::addAll)
-                .onFailure { failures += source.manifest.name }
+                .onFailure { error ->
+                    if (error is MyComicChallengeException) {
+                        webReaderUrl = error.url
+                        screen = AppScreen.WEB_READER
+                    }
+                    failures += source.manifest.name
+                }
         }
-        results = found
-        if (value.isBlank()) catalog = found
+        results = if (append) {
+            (results + found).distinctBy { "${it.sourceId}::${it.id}" }
+        } else {
+            found
+        }
+        searchPage = page
+        if (value.isBlank() && page == 1) catalog = results
         if (found.isEmpty() && failures.isNotEmpty()) {
             errorMessage = "漫画源加载失败：${failures.joinToString("、")}"
         }
@@ -507,6 +560,11 @@ class MainViewModel(
     private fun PluginRepositoryClient.indexUpdates(
         index: com.comichub.source.runtime.PluginRepositoryIndex
     ): List<PluginUpdate> = PluginRepositoryIndexLoader().updates(index, pluginStore.list())
+
+    override fun onCleared() {
+        myComicWebSession?.destroy()
+        super.onCleared()
+    }
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory =

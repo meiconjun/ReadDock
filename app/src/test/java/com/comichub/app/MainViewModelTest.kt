@@ -9,6 +9,7 @@ import com.comichub.data.ReadingProgress
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicSummary
+import com.comichub.source.runtime.MyComicSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +41,27 @@ class MainViewModelTest {
         repository = FakeLibraryRepository()
     }
 
+    private fun createViewModel(): MainViewModel = MainViewModel(
+        context,
+        repository,
+        MyComicSource { url ->
+            when {
+                url == "https://mycomic.com/cn/comics?page=1" -> """
+                    <a href="/cn/comics/1769">
+                      <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
+                    </a>
+                """.trimIndent()
+                url == MyComicSource.COMIC_URL -> """
+                    <html><head><title>烙印战士 - MYCOMIC</title></head><body>
+                      <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
+                      <a href="/cn/chapters/15444">第01卷</a>
+                    </body></html>
+                """.trimIndent()
+                else -> error("missing MYCOMIC test fixture: $url")
+            }
+        }
+    )
+
     @After
     fun tearDown() {
         Dispatchers.resetMain()
@@ -47,7 +69,7 @@ class MainViewModelTest {
 
     @Test
     fun `detail, bookshelf and reader update the injected repository`() = runTest {
-        val viewModel = MainViewModel(context, repository)
+        val viewModel = createViewModel()
         advanceUntilIdle()
 
         val comic = ComicSummary(
@@ -77,8 +99,23 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `mycomic chapter opens in the browser session reader`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val comic = viewModel.results.single { it.sourceId == MyComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        viewModel.openChapter(viewModel.selectedDetail!!.chapters.single())
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.WEB_READER, viewModel.screen)
+        assertEquals(MyComicSource.FIRST_CHAPTER_URL, viewModel.webReaderUrl)
+    }
+
+    @Test
     fun `invalid repository url becomes an error message`() = runTest {
-        val viewModel = MainViewModel(context, repository)
+        val viewModel = createViewModel()
         advanceUntilIdle()
 
         viewModel.updateRepositoryUrl("http://insecure.example/index.json")
@@ -90,7 +127,7 @@ class MainViewModelTest {
 
     @Test
     fun `invalid plugin import becomes an error message`() = runTest {
-        val viewModel = MainViewModel(context, repository)
+        val viewModel = createViewModel()
         advanceUntilIdle()
 
         viewModel.installPlugin("{\"notAPlugin\":true}")

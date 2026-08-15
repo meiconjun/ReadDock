@@ -41,6 +41,20 @@ comic-source package example-source dist/example-source.json --private-key signi
 
 `package` 默认输出未签名 JSON；提供 `--private-key` 和 `--key-id` 时输出现有运行时支持的 `SignedPluginEnvelope`。私钥支持 PKCS#8 PEM 或 DER，公钥可用于 `validate --require-signature --public-key ... --key-id ...`。`test` 读取 `search.html`、`detail.html`、`pages.html` 和可选的 `fixture.json`；若存在后者，还会核对内容来源说明和期望解析结果，不会访问真实网站。当前仓库示例使用项目自有合成内容，真实授权源仍需在获得授权后替换 fixture 并补充来源记录。
 
+## MYCOMIC 全站数据源
+
+App 内置了 `MYCOMIC` 数据源插件。它使用站点的搜索分页、漫画详情、单话/单行本
+章节列表和 `img.page` 图片节点动态解析，因此插件边界是 MYCOMIC 站点，而不是某
+一部漫画。`https://mycomic.com/cn/comics/1769` 只是当前用于验收的目标漫画。
+
+由于 MYCOMIC 会拦截普通 HTTP 请求，搜索、详情和章节数据使用同一个启用
+JavaScript、DOM Storage 和 cookie 的受控 WebView 会话加载，再交给源解析器处理；
+阅读页视觉上只保留漫画图片。如果站点显示人工验证，请在 WebView 页面内完成，App
+不会自动绕过验证码或 Cloudflare 挑战。
+
+这是针对需要浏览器会话的网站的接入方式，不会把 WebView cookie 复制到普通
+`HttpURLConnection` 请求，也不会使用代理池、指纹伪装或 IP 轮换。
+
 ## 模拟器验收
 
 当前开发机已安装 API 35 Google APIs x86_64 模拟器，AVD 名称为 `ComicHub_API35`。启动后可用以下命令安装并打开 Debug APK：
@@ -56,8 +70,8 @@ adb -s emulator-5554 shell am start -n com.comichub.app/.MainActivity
 
 ```text
 :core:data:testDebugUnitTest   PASS (4 tests)
-:core:source-runtime:test       PASS (27 tests)
-:app:testDebugUnitTest         PASS (3 tests)
+:core:source-runtime:test       PASS (29 tests)
+:app:testDebugUnitTest         PASS (4 tests)
 :plugin-cli:test                PASS (5 tests)
 :app:assembleDebug              PASS
 ```
