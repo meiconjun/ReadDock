@@ -42,3 +42,14 @@ gradle :plugin-cli:run --args="test ../plugin-sdk/fixtures/example-source"
 4. 使用发布密钥签名插件包，并把私钥留在安全位置；
 5. 记录许可证、来源和变更；
 6. 在独立仓库发布真实数据源插件。
+
+## 协议依赖
+
+如果插件工程需要使用 Kotlin 协议类，可以引用 ReadDock 的 GitHub Packages：
+
+~~~text
+io.readdock:source-api:0.5.0-beta01
+io.readdock:source-runtime:0.5.0-beta01
+~~~
+
+仓库地址：`https://maven.pkg.github.com/meiconjun/ReadDock`。使用 GitHub 令牌访问时，请通过 Gradle 用户配置或 CI secret 提供凭据，不要把令牌放进项目文件。

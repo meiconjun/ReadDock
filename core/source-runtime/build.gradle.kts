@@ -1,6 +1,7 @@
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("maven-publish")
 }
 
 kotlin {
@@ -15,4 +16,23 @@ dependencies {
     implementation("org.mozilla:rhino:1.7.15")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+}
+
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/meiconjun/ReadDock")
+            credentials {
+                username = providers.environmentVariable("GITHUB_ACTOR").getOrElse("github-actions")
+                password = providers.environmentVariable("GITHUB_TOKEN").getOrElse("")
+            }
+        }
+    }
+
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+        }
+    }
 }
