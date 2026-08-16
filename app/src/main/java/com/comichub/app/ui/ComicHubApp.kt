@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
@@ -120,7 +121,7 @@ fun ComicHubApp() {
     DisposableEffect(activity, viewModel.screen) {
         val window = activity?.window
         val previousNavigationBarColor = window?.navigationBarColor
-        if (viewModel.screen == AppScreen.LOCAL_READER) {
+        if (viewModel.screen == AppScreen.READER || viewModel.screen == AppScreen.LOCAL_READER) {
             window?.navigationBarColor = Color.Black.toArgb()
         }
         onDispose {
@@ -136,7 +137,8 @@ fun ComicHubApp() {
                 viewModel.screen != AppScreen.LIBRARY &&
                 viewModel.screen != AppScreen.SOURCES
             ) {
-                val isLocalReader = viewModel.screen == AppScreen.LOCAL_READER
+                val isComicReader = viewModel.screen == AppScreen.READER ||
+                    viewModel.screen == AppScreen.LOCAL_READER
                 TopAppBar(
                     title = {
                         Text(
@@ -158,9 +160,9 @@ fun ComicHubApp() {
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = if (isLocalReader) Color.Black else MaterialTheme.colorScheme.surface,
-                        titleContentColor = if (isLocalReader) Color.White else MaterialTheme.colorScheme.onSurface,
-                        navigationIconContentColor = if (isLocalReader) Color.White else MaterialTheme.colorScheme.onSurface
+                        containerColor = if (isComicReader) Color.Black else MaterialTheme.colorScheme.surface,
+                        titleContentColor = if (isComicReader) Color.White else MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = if (isComicReader) Color.White else MaterialTheme.colorScheme.onSurface
                     )
                 )
             }
@@ -831,75 +833,103 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color.Black)
             .padding(padding),
         state = listState,
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
-            ErrorNotice(viewModel.errorMessage)
-            viewModel.actionMessage?.let { InlineMessage(it) }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                ErrorNotice(viewModel.errorMessage)
+                viewModel.actionMessage?.let { InlineMessage(it) }
+            }
         }
         item {
             if (viewModel.isLoading) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black)
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White
+                    )
                     Spacer(Modifier.size(8.dp))
-                    Text("正在加载图片…")
+                    Text("正在加载图片…", color = Color.White)
                 }
             }
         }
         item {
-            ReaderControls(
-                previousChapter = previousChapter,
-                nextChapter = nextChapter,
-                enabled = !viewModel.isLoading,
-                onPrevious = { previousChapter?.let(viewModel::openChapter) },
-                onChapterList = viewModel::back,
-                onNext = { nextChapter?.let(viewModel::openChapter) }
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                ReaderControls(
+                    previousChapter = previousChapter,
+                    nextChapter = nextChapter,
+                    enabled = !viewModel.isLoading,
+                    onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                    onChapterList = viewModel::back,
+                    onNext = { nextChapter?.let(viewModel::openChapter) }
+                )
+            }
         }
         item {
             Text(
                 "第 ${viewModel.readerPage}/${viewModel.pages.size.coerceAtLeast(1)} 页",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.LightGray,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black)
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
         items(viewModel.pages, key = { it.id }) { page ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                val bitmap = remember(viewModel.imageBytes[page.id]) {
-                    viewModel.imageBytes[page.id]?.let { bytes ->
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                    }
+            val bitmap = remember(viewModel.imageBytes[page.id]) {
+                viewModel.imageBytes[page.id]?.let { bytes ->
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                 }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = "第 ${page.index} 页",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 240.dp),
-                        contentScale = ContentScale.FillWidth
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = androidx.compose.ui.Alignment.Center
-                    ) {
-                        val message = when {
-                            viewModel.isLoading && page.imageUrl != null -> "图片加载中…"
-                            page.imageUrl != null -> "图片加载失败，可点击“重试图片”"
-                            else -> page.displayText ?: "图片页面 ${page.index}"
-                        }
-                        Text(
-                            message,
-                            modifier = Modifier.padding(24.dp),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+            }
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "第 ${page.index} 页",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 240.dp)
+                        .background(Color.Black),
+                    contentScale = ContentScale.FillWidth
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .background(Color(0xFF171717)),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    val message = when {
+                        viewModel.isLoading && page.imageUrl != null -> "图片加载中…"
+                        page.imageUrl != null -> "图片加载失败，可点击“重试图片”"
+                        else -> page.displayText ?: "图片页面 ${page.index}"
                     }
+                    Text(
+                        message,
+                        modifier = Modifier.padding(24.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.LightGray
+                    )
                 }
             }
         }
@@ -907,7 +937,11 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             if (viewModel.errorMessage != null && viewModel.pages.any { it.imageUrl != null }) {
                 TextButton(
                     onClick = viewModel::retryReaderImages,
-                    enabled = !viewModel.isLoading
+                    enabled = !viewModel.isLoading,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = Color.White,
+                        disabledContentColor = Color(0xFF666666)
+                    )
                 ) {
                     Text("重试图片")
                 }
@@ -927,17 +961,29 @@ private fun ReaderControls(
     onChapterList: () -> Unit,
     onNext: () -> Unit
 ) {
+    val buttonColors = ButtonDefaults.textButtonColors(
+        contentColor = Color.White,
+        disabledContentColor = Color(0xFF666666)
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        TextButton(onClick = onPrevious, enabled = enabled && previousChapter != null) {
+        TextButton(
+            onClick = onPrevious,
+            enabled = enabled && previousChapter != null,
+            colors = buttonColors
+        ) {
             Text("上一章")
         }
-        TextButton(onClick = onChapterList, enabled = enabled) {
+        TextButton(onClick = onChapterList, enabled = enabled, colors = buttonColors) {
             Text("章节列表")
         }
-        TextButton(onClick = onNext, enabled = enabled && nextChapter != null) {
+        TextButton(
+            onClick = onNext,
+            enabled = enabled && nextChapter != null,
+            colors = buttonColors
+        ) {
             Text("下一章")
         }
     }
