@@ -567,6 +567,20 @@
 - 通过 `adb logcat` 检查未发现 App 的 `FATAL EXCEPTION` 或 `OutOfMemoryError`；筛选到的 `AndroidRuntime` 仅为 Monkey 启动命令正常退出
 - 未观察到旧图片、旧章节错误或旧进度串入当前页面，也未发现重复导航或崩溃
 
+### Iteration 17：本地 PDF 与 MOBI 模拟器回归
+
+状态：已完成
+
+目标：继续验证 Iteration 16 后的本地文件格式路径，确认 PDF、MOBI 不通过 WebView，并检查大文件导入与本地阅读器稳定性。
+
+验证结果：
+
+- 真实 PDF 导入成功，解析为 2 页并在本地阅读器打开；页面标识为 `PDF`
+- 真实 280 MB MOBI 导入成功，解析为 8 页并在本地阅读器打开；页面标识为 `MOBI`
+- 两种格式均未进入 WebView；导入和打开期间未发现 `FATAL EXCEPTION`、`OutOfMemoryError` 或 ANR
+- 当前可用 ZIP 样本为非漫画文本/SQL 文件，未将其误记为 CBZ/ZIP 回归通过
+- 本轮仅补充模拟器验证记录，没有新增功能代码
+
 ## 当前技术原则
 
 - 简单 HTML 源优先使用声明式 CSS 选择器
