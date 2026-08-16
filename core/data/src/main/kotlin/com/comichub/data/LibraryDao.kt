@@ -32,6 +32,21 @@ data class LibraryRow(
     val addedAt: Long
 )
 
+data class LocalComicRow(
+    val id: String,
+    val title: String,
+    val fileName: String,
+    val format: String,
+    val localPath: String,
+    val coverPath: String?,
+    val pageCount: Int,
+    val currentPage: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val fileSize: Long,
+    val fileHash: String
+)
+
 @Dao
 interface LibraryDao {
     @Query(
@@ -106,4 +121,22 @@ interface LibraryDao {
             "LIMIT 1"
     )
     suspend fun findProgress(sourceId: String, comicId: String, chapterId: String): ReadingProgressEntity?
+
+    @Query("SELECT * FROM local_comics ORDER BY updatedAt DESC, createdAt DESC")
+    fun observeLocalComics(): Flow<List<LocalComicEntity>>
+
+    @Query("SELECT * FROM local_comics WHERE id = :id LIMIT 1")
+    suspend fun findLocalComic(id: String): LocalComicEntity?
+
+    @Query("SELECT * FROM local_comics WHERE fileHash = :fileHash LIMIT 1")
+    suspend fun findLocalComicByHash(fileHash: String): LocalComicEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLocalComic(comic: LocalComicEntity)
+
+    @Query("UPDATE local_comics SET currentPage = :currentPage, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateLocalProgress(id: String, currentPage: Int, updatedAt: Long)
+
+    @Query("DELETE FROM local_comics WHERE id = :id")
+    suspend fun deleteLocalComic(id: String)
 }

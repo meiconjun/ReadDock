@@ -1,6 +1,7 @@
 package com.comichub.app
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,9 +12,14 @@ import com.comichub.data.FileImageCache
 import com.comichub.data.ImageDownloadQueue
 import com.comichub.data.LibraryComic
 import com.comichub.data.LibraryRepository
+import com.comichub.data.LocalComic
+import com.comichub.data.LocalComicRepository
 import com.comichub.data.ReadingHistoryItem
 import com.comichub.data.RoomLibraryRepository
+import com.comichub.data.RoomLocalComicRepository
 import com.comichub.data.DownloadStatus
+import com.comichub.app.local.LocalComicImporter
+import com.comichub.app.local.LocalImportResult
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicPage
@@ -58,6 +64,7 @@ enum class AppScreen {
     SEARCH,
     DETAIL,
     READER,
+    LOCAL_READER,
     WEB_READER,
     LIBRARY,
     SOURCES
@@ -73,15 +80,23 @@ data class UiMessage(
     val tone: MessageTone
 )
 
+enum class LocalImportStatus { IDLE, LOADING, SUCCESS, EMPTY, ERROR }
+
+data class LocalImportUiState(
+    val status: LocalImportStatus = LocalImportStatus.IDLE,
+    val message: String? = null
+)
+
 private fun infoMessage(text: String) = UiMessage(text, MessageTone.INFO)
 
 private fun failureMessage(text: String) = UiMessage(text, MessageTone.ERROR)
 
 class MainViewModel(
-    appContext: Context,
+    private val appContext: Context,
     private val library: LibraryRepository = RoomLibraryRepository.create(appContext),
     myComicSourceOverride: ComicSource? = null,
-    private val imageFetcher: (suspend (String) -> ByteArray)? = null
+    private val imageFetcher: (suspend (String) -> ByteArray)? = null,
+    private val localComicRepository: LocalComicRepository = RoomLocalComicRepository.create(appContext)
 ) : ViewModel() {
     private sealed interface PendingWebAction {
         data class Search(val query: String, val page: Int, val append: Boolean) : PendingWebAction
@@ -119,6 +134,8 @@ class MainViewModel(
     private val backStack = mutableListOf(AppScreen.SEARCH)
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
+    private var localImportJob: Job? = null
+    private var localDeleteJob: Job? = null
     private var activeImagePageIds: Map<String, String> = emptyMap()
 
     val libraryItems: StateFlow<List<LibraryComic>> = library.observeLibrary().stateIn(
@@ -127,6 +144,11 @@ class MainViewModel(
         initialValue = emptyList()
     )
     val readingHistory: StateFlow<List<ReadingHistoryItem>> = library.observeHistory().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+    val localComics: StateFlow<List<LocalComic>> = localComicRepository.observeLocalComics().stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
@@ -193,6 +215,10 @@ class MainViewModel(
     var errorMessage by mutableStateOf<String?>(null)
         private set
     var actionMessage by mutableStateOf<UiMessage?>(null)
+        private set
+    var localImportState by mutableStateOf(LocalImportUiState())
+        private set
+    var selectedLocalComicId by mutableStateOf<String?>(null)
         private set
     var isSaving by mutableStateOf(false)
         private set
@@ -466,6 +492,111 @@ class MainViewModel(
         }
     }
 
+    fun importLocalFiles(uris: List<Uri>) {
+        if (uris.isEmpty() || localImportJob?.isActive == true) return
+        localImportJob = viewModelScope.launch {
+            localImportState = LocalImportUiState(LocalImportStatus.LOADING, "正在导入本地漫画…")
+            try {
+                when (val result = LocalComicImporter(
+                    context = appContext,
+                    repository = localComicRepository
+                ).importFiles(uris)) {
+                    is LocalImportResult.Success -> {
+                        localImportState = LocalImportUiState(
+                            LocalImportStatus.SUCCESS,
+                            "已导入：${result.comic.title}（${result.comic.pageCount} 页）"
+                        )
+                        actionMessage = infoMessage(localImportState.message!!)
+                    }
+                    is LocalImportResult.Duplicate -> {
+                        localImportState = LocalImportUiState(
+                            LocalImportStatus.SUCCESS,
+                            "文件已在本地书架：${result.existing.title}"
+                        )
+                        actionMessage = infoMessage(localImportState.message!!)
+                    }
+                    is LocalImportResult.Empty -> {
+                        localImportState = LocalImportUiState(LocalImportStatus.EMPTY, result.message)
+                    }
+                    is LocalImportResult.Error -> {
+                        localImportState = LocalImportUiState(LocalImportStatus.ERROR, result.message)
+                        actionMessage = failureMessage(result.message)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val message = "导入失败：${error.message ?: "未知错误"}"
+                localImportState = LocalImportUiState(LocalImportStatus.ERROR, message)
+                actionMessage = failureMessage(message)
+            }
+        }
+    }
+
+    fun importLocalFolder(uri: Uri) {
+        if (localImportJob?.isActive == true) return
+        localImportJob = viewModelScope.launch {
+            localImportState = LocalImportUiState(LocalImportStatus.LOADING, "正在扫描文件夹…")
+            try {
+                when (val result = LocalComicImporter(
+                    context = appContext,
+                    repository = localComicRepository
+                ).importFolder(uri)) {
+                    is LocalImportResult.Success -> {
+                        localImportState = LocalImportUiState(
+                            LocalImportStatus.SUCCESS,
+                            "已导入：${result.comic.title}（${result.comic.pageCount} 页）"
+                        )
+                        actionMessage = infoMessage(localImportState.message!!)
+                    }
+                    is LocalImportResult.Duplicate -> {
+                        localImportState = LocalImportUiState(
+                            LocalImportStatus.SUCCESS,
+                            "文件夹内容已在本地书架：${result.existing.title}"
+                        )
+                        actionMessage = infoMessage(localImportState.message!!)
+                    }
+                    is LocalImportResult.Empty -> localImportState =
+                        LocalImportUiState(LocalImportStatus.EMPTY, result.message)
+                    is LocalImportResult.Error -> {
+                        localImportState = LocalImportUiState(LocalImportStatus.ERROR, result.message)
+                        actionMessage = failureMessage(result.message)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val message = "导入失败：${error.message ?: "未知错误"}"
+                localImportState = LocalImportUiState(LocalImportStatus.ERROR, message)
+                actionMessage = failureMessage(message)
+            }
+        }
+    }
+
+    fun openLocalComic(comic: LocalComic) {
+        if (localDeleteJob?.isActive == true) return
+        selectedLocalComicId = comic.id
+        errorMessage = null
+        actionMessage = null
+        navigateTo(AppScreen.LOCAL_READER)
+    }
+
+    fun deleteLocalComic(comic: LocalComic) {
+        if (localDeleteJob?.isActive == true) return
+        localDeleteJob = viewModelScope.launch {
+            try {
+                localComicRepository.delete(comic.id)
+                withContext(Dispatchers.IO) { File(comic.localPath).deleteRecursively() }
+                actionMessage = infoMessage("已删除：${comic.title}")
+                if (selectedLocalComicId == comic.id && screen == AppScreen.LOCAL_READER) back()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                actionMessage = failureMessage("删除失败：${error.message ?: "未知错误"}")
+            }
+        }
+    }
+
     fun updateReadingProgress(page: Int) {
         val chapter = selectedChapter ?: return
         val totalPages = pages.size
@@ -657,6 +788,7 @@ class MainViewModel(
         isLoading = false
         popScreen()
         pendingWebAction = null
+        if (screen != AppScreen.LOCAL_READER) selectedLocalComicId = null
     }
 
     private fun navigateTo(target: AppScreen) {

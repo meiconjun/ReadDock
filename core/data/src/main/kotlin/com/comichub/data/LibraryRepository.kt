@@ -56,6 +56,30 @@ data class ReadingHistoryItem(
     )
 }
 
+data class LocalComic(
+    val id: String,
+    val title: String,
+    val fileName: String,
+    val format: String,
+    val localPath: String,
+    val coverPath: String?,
+    val pageCount: Int,
+    val currentPage: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val fileSize: Long,
+    val fileHash: String
+)
+
+interface LocalComicRepository {
+    fun observeLocalComics(): Flow<List<LocalComic>>
+    suspend fun findById(id: String): LocalComic?
+    suspend fun findByHash(fileHash: String): LocalComic?
+    suspend fun insert(comic: LocalComic)
+    suspend fun updateProgress(id: String, currentPage: Int): LocalComic?
+    suspend fun delete(id: String)
+}
+
 interface LibraryRepository {
     fun observeLibrary(): Flow<List<LibraryComic>>
 
@@ -169,6 +193,69 @@ class RoomLibraryRepository(
     override suspend fun getProgress(chapter: Chapter): ReadingProgress? =
         dao.findProgress(chapter.sourceId, chapter.comicId, chapter.id)?.toProgress()
 }
+
+class RoomLocalComicRepository(
+    private val dao: LibraryDao,
+    private val clock: () -> Long = System::currentTimeMillis
+) : LocalComicRepository {
+    companion object {
+        fun create(context: android.content.Context): RoomLocalComicRepository =
+            RoomLocalComicRepository(ComicHubDatabase.create(context).libraryDao())
+    }
+
+    override fun observeLocalComics(): Flow<List<LocalComic>> =
+        dao.observeLocalComics().map { rows -> rows.map(LocalComicEntity::toLocalComic) }
+
+    override suspend fun findById(id: String): LocalComic? = dao.findLocalComic(id)?.toLocalComic()
+
+    override suspend fun findByHash(fileHash: String): LocalComic? =
+        dao.findLocalComicByHash(fileHash)?.toLocalComic()
+
+    override suspend fun insert(comic: LocalComic) {
+        dao.upsertLocalComic(comic.toEntity())
+    }
+
+    override suspend fun updateProgress(id: String, currentPage: Int): LocalComic? {
+        val comic = dao.findLocalComic(id) ?: return null
+        val page = currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))
+        dao.updateLocalProgress(id, page, clock())
+        return dao.findLocalComic(id)?.toLocalComic()
+    }
+
+    override suspend fun delete(id: String) {
+        dao.deleteLocalComic(id)
+    }
+}
+
+private fun LocalComic.toEntity() = LocalComicEntity(
+    id = id,
+    title = title,
+    fileName = fileName,
+    format = format,
+    localPath = localPath,
+    coverPath = coverPath,
+    pageCount = pageCount,
+    currentPage = currentPage,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    fileSize = fileSize,
+    fileHash = fileHash
+)
+
+private fun LocalComicEntity.toLocalComic() = LocalComic(
+    id = id,
+    title = title,
+    fileName = fileName,
+    format = format,
+    localPath = localPath,
+    coverPath = coverPath,
+    pageCount = pageCount,
+    currentPage = currentPage,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    fileSize = fileSize,
+    fileHash = fileHash
+)
 
 private fun ComicSummary.toEntity(
     now: Long,

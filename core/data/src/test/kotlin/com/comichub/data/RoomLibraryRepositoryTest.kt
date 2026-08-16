@@ -95,4 +95,35 @@ class RoomLibraryRepositoryTest {
         assertTrue(repository.observeLibrary().first().isEmpty())
         assertEquals(1, repository.observeHistory().first().size)
     }
+
+    @Test
+    fun `persists local comics, deduplicates by hash, resumes and deletes`() = runBlocking {
+        val localRepository = RoomLocalComicRepository(database.libraryDao())
+        val comic = LocalComic(
+            id = "local-1",
+            title = "本地测试",
+            fileName = "pages.zip",
+            format = "CBZ",
+            localPath = "/data/local-1",
+            coverPath = "/data/local-1/pages/00001.png",
+            pageCount = 8,
+            currentPage = 1,
+            createdAt = 1L,
+            updatedAt = 1L,
+            fileSize = 1024L,
+            fileHash = "sha256-test"
+        )
+
+        localRepository.insert(comic)
+        assertEquals(comic.id, localRepository.observeLocalComics().first().single().id)
+        assertEquals(comic.id, localRepository.findByHash("sha256-test")?.id)
+
+        val resumed = localRepository.updateProgress(comic.id, 5)
+        assertEquals(5, resumed?.currentPage)
+        assertEquals(5, localRepository.findById(comic.id)?.currentPage)
+
+        localRepository.delete(comic.id)
+        assertTrue(localRepository.observeLocalComics().first().isEmpty())
+        assertEquals(null, localRepository.findByHash("sha256-test"))
+    }
 }

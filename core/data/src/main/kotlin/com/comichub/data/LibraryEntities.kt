@@ -75,3 +75,27 @@ data class ReadingProgressEntity(
     val lastReadAt: Long,
     val completed: Boolean
 )
+
+/**
+ * A locally imported comic is deliberately independent from the online comic
+ * tables.  It has no source/plugin identity and can therefore never be routed
+ * through an online ComicSource or WebView.
+ */
+@Entity(
+    tableName = "local_comics",
+    indices = [androidx.room.Index(value = ["fileHash"])]
+)
+data class LocalComicEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val title: String,
+    val fileName: String,
+    val format: String,
+    val localPath: String,
+    val coverPath: String?,
+    val pageCount: Int,
+    val currentPage: Int,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val fileSize: Long,
+    val fileHash: String
+)

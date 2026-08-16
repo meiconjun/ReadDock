@@ -10,9 +10,10 @@ import androidx.room.RoomDatabase
         ComicEntity::class,
         ChapterEntity::class,
         LibraryEntryEntity::class,
-        ReadingProgressEntity::class
+        ReadingProgressEntity::class,
+        LocalComicEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class ComicHubDatabase : RoomDatabase() {
@@ -24,6 +25,30 @@ abstract class ComicHubDatabase : RoomDatabase() {
                 context.applicationContext,
                 ComicHubDatabase::class.java,
                 "comichub.db"
-            ).build()
+            ).addMigrations(MIGRATION_1_2).build()
+
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_comics (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        fileName TEXT NOT NULL,
+                        format TEXT NOT NULL,
+                        localPath TEXT NOT NULL,
+                        coverPath TEXT,
+                        pageCount INTEGER NOT NULL,
+                        currentPage INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        fileSize INTEGER NOT NULL,
+                        fileHash TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_comics_fileHash ON local_comics(fileHash)")
+            }
+        }
     }
 }

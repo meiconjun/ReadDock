@@ -1,7 +1,6 @@
 package com.comichub.app.ui
 
 import android.annotation.SuppressLint
-import android.graphics.BitmapFactory
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -32,11 +31,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +51,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -59,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Modifier
@@ -72,12 +74,19 @@ import com.comichub.app.MainActivity
 import com.comichub.app.MainViewModel
 import com.comichub.app.MessageTone
 import com.comichub.app.UiMessage
+import com.comichub.app.LocalImportStatus
+import com.comichub.app.local.LocalReaderScreen
+import com.comichub.data.LocalComic
 import com.comichub.data.LibraryComic
 import com.comichub.data.ReadingHistoryItem
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicSummary
 import com.comichub.source.runtime.RequestOutcome
 import com.comichub.source.runtime.SourceHealthSnapshot
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +96,7 @@ fun ComicHubApp() {
     val viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(context))
     val libraryItems by viewModel.libraryItems.collectAsStateWithLifecycle()
     val readingHistory by viewModel.readingHistory.collectAsStateWithLifecycle()
+    val localComics by viewModel.localComics.collectAsStateWithLifecycle()
     val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
     val savedIds by viewModel.savedIds.collectAsStateWithLifecycle()
 
@@ -116,6 +126,7 @@ fun ComicHubApp() {
                             when (viewModel.screen) {
                                 AppScreen.DETAIL -> viewModel.selectedDetail?.summary?.title ?: "漫画详情"
                                 AppScreen.READER -> viewModel.selectedChapter?.title ?: "阅读"
+                                AppScreen.LOCAL_READER -> "本地阅读"
                                 AppScreen.WEB_READER -> viewModel.selectedChapter?.title ?: "网页阅读"
                                 else -> "ComicHub"
                             }
@@ -159,10 +170,13 @@ fun ComicHubApp() {
     ) { padding ->
         when (viewModel.screen) {
             AppScreen.SEARCH -> SearchScreen(viewModel, padding)
-            AppScreen.LIBRARY -> LibraryScreen(viewModel, libraryItems, readingHistory, padding)
+            AppScreen.LIBRARY -> LibraryScreen(viewModel, libraryItems, readingHistory, localComics, padding)
             AppScreen.SOURCES -> SourcesScreen(viewModel, sourceHealth, padding)
             AppScreen.DETAIL -> DetailScreen(viewModel, savedIds, padding)
             AppScreen.READER -> ReaderScreen(viewModel, padding)
+            AppScreen.LOCAL_READER -> viewModel.selectedLocalComicId?.let { id ->
+                LocalReaderScreen(comicId = id, padding = padding)
+            } ?: ErrorNotice("没有选择本地漫画")
             AppScreen.WEB_READER -> WebReaderScreen(viewModel, padding)
         }
     }
@@ -253,8 +267,20 @@ private fun LibraryScreen(
     viewModel: MainViewModel,
     libraryItems: List<LibraryComic>,
     readingHistory: List<ReadingHistoryItem>,
+    localComics: List<LocalComic>,
     padding: PaddingValues
 ) {
+    var pendingDelete by remember { mutableStateOf<LocalComic?>(null) }
+    val singlePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { viewModel.importLocalFiles(listOf(it)) } }
+    val multipleImagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris -> if (uris.isNotEmpty()) viewModel.importLocalFiles(uris) }
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri -> uri?.let(viewModel::importLocalFolder) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -265,12 +291,80 @@ private fun LibraryScreen(
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         item {
-            Text("我的书架", style = MaterialTheme.typography.headlineMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text("我的书架", style = MaterialTheme.typography.headlineMedium)
+                Button(
+                    onClick = { singlePicker.launch(arrayOf("*/*")) },
+                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                ) {
+                    Text("导入本地")
+                }
+            }
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = { multipleImagePicker.launch("image/*") },
+                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                ) { Text("多选图片") }
+                TextButton(
+                    onClick = { folderPicker.launch(null) },
+                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                ) { Text("导入文件夹") }
+            }
+            when (viewModel.localImportState.status) {
+                LocalImportStatus.LOADING -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(viewModel.localImportState.message ?: "正在导入…")
+                }
+                LocalImportStatus.SUCCESS -> viewModel.localImportState.message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.primary)
+                }
+                LocalImportStatus.EMPTY -> viewModel.localImportState.message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                LocalImportStatus.ERROR -> viewModel.localImportState.message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                LocalImportStatus.IDLE -> Unit
+            }
+        }
+        item {
+            Spacer(Modifier.height(8.dp))
+            Text("本地漫画", style = MaterialTheme.typography.titleLarge)
+        }
+        if (localComics.isEmpty()) {
+            item {
+                Text(
+                    "本地书架为空。可以导入单个文件、多选图片或整个图片文件夹。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            items(localComics, key = { "local::${it.id}" }) { comic ->
+                LocalComicRow(
+                    comic = comic,
+                    onClick = { viewModel.openLocalComic(comic) },
+                    onDelete = { pendingDelete = comic }
+                )
+            }
+        }
+        item {
+            Spacer(Modifier.height(20.dp))
+            Text("在线收藏", style = MaterialTheme.typography.titleLarge)
         }
         if (libraryItems.isEmpty()) {
             item {
                 Text(
-                    "还没有收藏漫画。先去发现页添加一本吧。",
+                    "还没有收藏漫画。在线漫画收藏会独立保存在这里。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -317,6 +411,81 @@ private fun LibraryScreen(
             }
         }
     }
+
+    pendingDelete?.let { comic ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除本地漫画？") },
+            text = { Text("将删除“${comic.title}”及其 App 内的本地文件，无法恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        viewModel.deleteLocalComic(comic)
+                    }
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun LocalComicRow(
+    comic: LocalComic,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        ListItem(
+            headlineContent = { Text(comic.title) },
+            supportingContent = {
+                Text(
+                    "${comic.format} · ${comic.pageCount} 页 · " +
+                        "进度 ${comic.currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))}/${comic.pageCount}"
+                )
+            },
+            leadingContent = { LocalCover(comic.coverPath, comic.title) },
+            trailingContent = {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除本地漫画")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun LocalCover(path: String?, title: String) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = path) {
+        value = withContext(Dispatchers.IO) { decodeCover(path) }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "${title}封面",
+            modifier = Modifier.size(54.dp),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) { Text(title.take(1), style = MaterialTheme.typography.titleLarge) }
+    }
+}
+
+private fun decodeCover(path: String?): Bitmap? {
+    if (path.isNullOrBlank()) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val sample = generateSequence(1) { it * 2 }
+        .takeWhile { bounds.outWidth / it > 180 || bounds.outHeight / it > 240 }
+        .lastOrNull() ?: 1
+    return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
 @Composable

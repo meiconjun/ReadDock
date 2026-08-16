@@ -4,12 +4,16 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.comichub.data.LibraryComic
 import com.comichub.data.LibraryRepository
+import com.comichub.data.LocalComic
+import com.comichub.data.LocalComicRepository
 import com.comichub.data.ReadingHistoryItem
 import com.comichub.data.ReadingProgress
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicSummary
 import com.comichub.source.runtime.MyComicSource
+import com.comichub.app.local.LocalReaderStatus
+import com.comichub.app.local.LocalReaderViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +28,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -32,6 +37,7 @@ import kotlin.test.assertTrue
 class MainViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: FakeLibraryRepository
+    private lateinit var localRepository: FakeLocalComicRepository
     private lateinit var context: Context
 
     @Before
@@ -39,6 +45,7 @@ class MainViewModelTest {
         Dispatchers.setMain(dispatcher)
         context = ApplicationProvider.getApplicationContext()
         repository = FakeLibraryRepository()
+        localRepository = FakeLocalComicRepository()
     }
 
     private fun createViewModel(): MainViewModel = MainViewModel(
@@ -74,7 +81,8 @@ class MainViewModelTest {
                 else -> error("missing MYCOMIC test fixture: $url")
             }
         },
-        imageFetcher = { byteArrayOf(1, 2, 3) }
+        imageFetcher = { byteArrayOf(1, 2, 3) },
+        localComicRepository = localRepository
     )
 
     @After
@@ -275,6 +283,48 @@ class MainViewModelTest {
         assertEquals(MessageTone.ERROR, viewModel.pluginMessage?.tone)
         assertTrue(viewModel.pluginMessage?.text.orEmpty().contains("插件未安装"))
     }
+
+    @Test
+    fun `local comic opens in an independent reader and obeys page boundaries`() = runTest {
+        val directory = createTempDir(prefix = "local-reader-test-")
+        File(directory, "pages.manifest").writeText("TEXT|pages/00001.txt\nTEXT|pages/00002.txt\n")
+        File(directory, "pages").mkdirs()
+        File(directory, "pages/00001.txt").writeText("第一页")
+        File(directory, "pages/00002.txt").writeText("第二页")
+        val comic = LocalComic(
+            id = "local-test",
+            title = "本地测试漫画",
+            fileName = "test.epub",
+            format = "EPUB",
+            localPath = directory.absolutePath,
+            coverPath = null,
+            pageCount = 2,
+            currentPage = 1,
+            createdAt = 1,
+            updatedAt = 1,
+            fileSize = 10,
+            fileHash = "local-hash"
+        )
+        localRepository.items.value = listOf(comic)
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.showLibrary()
+        viewModel.openLocalComic(comic)
+        assertEquals(AppScreen.LOCAL_READER, viewModel.screen)
+
+        val reader = LocalReaderViewModel(comic.id, localRepository, ioDispatcher = dispatcher)
+        advanceUntilIdle()
+        assertEquals(LocalReaderStatus.SUCCESS, reader.state.status)
+        assertEquals(1, reader.state.currentPage)
+        reader.previousPage()
+        assertEquals(1, reader.state.currentPage)
+        reader.nextPage()
+        advanceUntilIdle()
+        assertEquals(2, reader.state.currentPage)
+        reader.nextPage()
+        assertEquals(2, reader.state.currentPage)
+        assertEquals(2, localRepository.items.value.single().currentPage)
+    }
 }
 
 private class FakeLibraryRepository : LibraryRepository {
@@ -369,4 +419,31 @@ private class FakeLibraryRepository : LibraryRepository {
     override suspend fun getProgress(chapter: Chapter): ReadingProgress? = progress.value
 
     private fun comicKey(comic: ComicSummary): String = "${comic.sourceId}::${comic.id}"
+}
+
+private class FakeLocalComicRepository : LocalComicRepository {
+    val items = MutableStateFlow<List<LocalComic>>(emptyList())
+
+    override fun observeLocalComics(): Flow<List<LocalComic>> = items
+
+    override suspend fun findById(id: String): LocalComic? = items.value.firstOrNull { it.id == id }
+
+    override suspend fun findByHash(fileHash: String): LocalComic? =
+        items.value.firstOrNull { it.fileHash == fileHash }
+
+    override suspend fun insert(comic: LocalComic) {
+        items.value = items.value.filterNot { it.id == comic.id } + comic
+    }
+
+    override suspend fun updateProgress(id: String, currentPage: Int): LocalComic? {
+        val updated = items.value.map { comic ->
+            if (comic.id == id) comic.copy(currentPage = currentPage, updatedAt = comic.updatedAt + 1) else comic
+        }
+        items.value = updated
+        return updated.firstOrNull { it.id == id }
+    }
+
+    override suspend fun delete(id: String) {
+        items.value = items.value.filterNot { it.id == id }
+    }
 }
