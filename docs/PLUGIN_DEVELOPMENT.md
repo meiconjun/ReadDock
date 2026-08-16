@@ -120,3 +120,14 @@ requiresUserInteraction 只表示用户可能需要在目标服务允许的流�
 7. 用户能理解插件需要的权限和人工操作。
 
 插件 CLI 的更多命令见 [plugin-sdk/README.md](../plugin-sdk/README.md)。
+
+## 使用 ReadDock 的协议依赖
+
+如果插件项目需要直接引用协议或运行时，可以从 GitHub Packages 获取当前 Beta 版本：
+
+~~~text
+io.readdock:source-api:0.5.0-beta01
+io.readdock:source-runtime:0.5.0-beta01
+~~~
+
+仓库地址是 `https://maven.pkg.github.com/meiconjun/ReadDock`。GitHub Packages 需要身份验证，请把令牌放在本机 Gradle 配置或 CI secret 中，不要提交到插件仓库。

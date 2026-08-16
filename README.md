@@ -123,6 +123,35 @@ readdock-source keygen signing-keys
 
 仓库里的 example-source 只包含项目自有的合成离线内容，用于测试搜索、详情、章节和页面解析，不代表 ReadDock 已接入任何真实商业网站。
 
+## 给插件开发者的依赖
+
+发布版本会把插件协议和运行时发布到 GitHub Packages。Gradle 项目可以这样配置仓库：
+
+~~~kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/meiconjun/ReadDock")
+        credentials {
+            username = providers.gradleProperty("gpr.user")
+                .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+                .get()
+            password = providers.gradleProperty("gpr.key")
+                .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+                .get()
+        }
+    }
+}
+~~~
+
+当前 Beta 坐标是：
+
+~~~text
+io.readdock:source-api:0.5.0-beta01
+io.readdock:source-runtime:0.5.0-beta01
+~~~
+
+Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions 密钥，不要把令牌写进源码、Gradle 文件或 README。
+
 ## 代码结构
 
 - app：Android 界面、本地阅读器和在线阅读器；

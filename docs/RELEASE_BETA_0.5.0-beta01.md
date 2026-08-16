@@ -33,3 +33,14 @@ gradle :app:verifyReleasePublicSurface
 - 外部插件仓库需要用户配置 HTTPS 地址和可信公钥；
 - 大文件、特殊 MOBI 变体和不同站点的兼容性仍需更多测试；
 - 部分需要人工操作的数据源只提供通用协议，插件仍需自行实现。
+
+## 发布产物
+
+GitHub Release 会提供签名 APK、Debug APK 和插件 CLI 分发包。插件协议和运行时同时发布到 GitHub Packages：
+
+~~~text
+io.readdock:source-api:0.5.0-beta01
+io.readdock:source-runtime:0.5.0-beta01
+~~~
+
+Release 页面记录的 SHA-256 只对应实际上传的 APK 文件；重新下载或自行构建时，请以本地文件重新计算的结果为准。
