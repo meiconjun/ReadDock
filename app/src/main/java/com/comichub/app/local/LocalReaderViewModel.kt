@@ -17,7 +17,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -57,6 +60,7 @@ class LocalReaderViewModel(
         private set
 
     private var pageJob: Job? = null
+    private val progressMutex = Mutex()
 
     init {
         viewModelScope.launch { loadBook() }
@@ -125,17 +129,8 @@ class LocalReaderViewModel(
             pageErrorMessage = null,
             progressErrorMessage = null
         )
+        persistProgress(book, pageNumber)
         pageJob = viewModelScope.launch {
-            val progressJob = launch(ioDispatcher) {
-                runCatching { repository.updateProgress(book.id, pageNumber) }
-                    .onFailure { error ->
-                        if (error !is CancellationException) {
-                            state = state.copy(
-                                progressErrorMessage = "阅读进度保存失败：${error.message ?: "未知错误"}"
-                            )
-                        }
-                    }
-            }
             try {
                 val content = withContext(ioDispatcher) { loadContent(book, descriptor) }
                 state = state.copy(
@@ -151,8 +146,32 @@ class LocalReaderViewModel(
                     isPageLoading = false,
                     pageErrorMessage = "第 ${pageNumber} 页加载失败：${error.message ?: "文件损坏或不可读"}"
                 )
-            } finally {
-                progressJob.join()
+            }
+        }
+    }
+
+    /**
+     * Progress writes must not be children of pageJob.  pageJob is deliberately
+     * cancelled when the user changes pages; making the database write its child
+     * could cancel the write as the reader navigates quickly or is closed.
+     * Serialising writes also prevents an older page from racing a newer page.
+     */
+    private fun persistProgress(book: LocalComic, pageNumber: Int) {
+        viewModelScope.launch {
+            try {
+                progressMutex.withLock {
+                    withContext(NonCancellable + ioDispatcher) {
+                        repository.updateProgress(book.id, pageNumber)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (state.comic?.id == book.id && state.currentPage == pageNumber) {
+                    state = state.copy(
+                        progressErrorMessage = "阅读进度保存失败：${error.message ?: "未知错误"}"
+                    )
+                }
             }
         }
     }
