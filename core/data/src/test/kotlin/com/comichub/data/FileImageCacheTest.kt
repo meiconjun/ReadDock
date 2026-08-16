@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 
 class FileImageCacheTest {
     @Test
@@ -41,6 +42,19 @@ class FileImageCacheTest {
             assertEquals(8L, cache.sizeBytes())
             assertNull(cache.get(firstUrl))
             assertContentEquals(ByteArray(8) { 2 }, cache.get(secondUrl))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `rejects one entry larger than the per-file limit`() {
+        val directory = Files.createTempDirectory("comichub-image-entry-limit").toFile()
+        try {
+            val cache = FileImageCache(directory, maxBytes = 32, maxEntryBytes = 4)
+            assertFailsWith<IllegalArgumentException> {
+                cache.put("https://example.com/large.jpg", ByteArray(5))
+            }
         } finally {
             directory.deleteRecursively()
         }

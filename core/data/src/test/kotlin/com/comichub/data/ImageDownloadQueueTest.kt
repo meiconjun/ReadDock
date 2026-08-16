@@ -1,5 +1,7 @@
 package com.comichub.data
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
@@ -31,6 +33,35 @@ class ImageDownloadQueueTest {
             assertNotNull(cache.get("a"))
             assertNotNull(cache.get("b"))
             assertEquals(tasks, queue.tasks.value)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `downloadOne deduplicates concurrent requests for one url`() = runBlocking {
+        val directory = Files.createTempDirectory("comichub-download-one").toFile()
+        try {
+            val fetchCount = AtomicInteger(0)
+            val cache = FileImageCache(directory)
+            val queue = ImageDownloadQueue(
+                cache = cache,
+                fetch = {
+                    fetchCount.incrementAndGet()
+                    Thread.sleep(20)
+                    byteArrayOf(1, 2, 3)
+                }
+            )
+
+            val results = coroutineScope {
+                listOf(
+                    async { queue.downloadOne("same") },
+                    async { queue.downloadOne("same") }
+                ).map { it.await() }
+            }
+
+            assertEquals(1, fetchCount.get())
+            assertEquals(listOf(DownloadStatus.COMPLETED, DownloadStatus.COMPLETED), results.map { it.status })
         } finally {
             directory.deleteRecursively()
         }

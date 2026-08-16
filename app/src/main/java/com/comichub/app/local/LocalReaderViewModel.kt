@@ -1,7 +1,6 @@
 package com.comichub.app.local
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.runtime.getValue
@@ -10,6 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.comichub.app.reader.ReaderBitmapCache
+import com.comichub.app.reader.SampledBitmapDecoder
 import com.comichub.data.LocalComic
 import com.comichub.data.LocalComicRepository
 import com.comichub.data.RoomLocalComicRepository
@@ -46,8 +47,8 @@ data class LocalReaderState(
     val progressErrorMessage: String? = null
 ) {
     val pageCount: Int get() = pages.size
-    val canGoPrevious: Boolean get() = currentPage > 1 && !isPageLoading
-    val canGoNext: Boolean get() = currentPage < pageCount && !isPageLoading
+    val canGoPrevious: Boolean get() = currentPage > 1
+    val canGoNext: Boolean get() = currentPage < pageCount
 }
 
 class LocalReaderViewModel(
@@ -60,7 +61,9 @@ class LocalReaderViewModel(
         private set
 
     private var pageJob: Job? = null
+    private var pageRequestId = 0L
     private val progressMutex = Mutex()
+    private val bitmapDecoder = SampledBitmapDecoder(ReaderBitmapCache())
 
     init {
         viewModelScope.launch { loadBook() }
@@ -85,6 +88,7 @@ class LocalReaderViewModel(
     }
 
     private suspend fun loadBook() {
+        pageRequestId += 1
         pageJob?.cancel()
         state = LocalReaderState(status = LocalReaderStatus.LOADING)
         try {
@@ -120,6 +124,8 @@ class LocalReaderViewModel(
         val book = state.comic ?: return
         val pages = state.pages
         if (pageNumber !in 1..pages.size) return
+        pageRequestId += 1
+        val requestId = pageRequestId
         pageJob?.cancel()
         val descriptor = pages[pageNumber - 1]
         state = state.copy(
@@ -133,6 +139,7 @@ class LocalReaderViewModel(
         pageJob = viewModelScope.launch {
             try {
                 val content = withContext(ioDispatcher) { loadContent(book, descriptor) }
+                if (requestId != pageRequestId) return@launch
                 state = state.copy(
                     content = content,
                     isPageLoading = false,
@@ -141,6 +148,7 @@ class LocalReaderViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                if (requestId != pageRequestId) return@launch
                 state = state.copy(
                     content = null,
                     isPageLoading = false,
@@ -181,7 +189,13 @@ class LocalReaderViewModel(
         return when (descriptor) {
             is LocalPageDescriptor.Image -> {
                 val file = resolveChild(root, descriptor.relativePath)
-                LocalReaderPageContent(descriptor, bitmap = decodeSampledBitmap(file))
+                LocalReaderPageContent(
+                    descriptor,
+                    bitmap = bitmapDecoder.decodeFile(
+                        key = "${comic.id}:${descriptor.relativePath}",
+                        file = file
+                    )
+                )
             }
             is LocalPageDescriptor.Text -> {
                 val file = resolveChild(root, descriptor.relativePath)
@@ -197,20 +211,6 @@ class LocalReaderViewModel(
                 LocalReaderPageContent(descriptor, bitmap = renderPdfPage(file, descriptor.pageIndex))
             }
         }
-    }
-
-    private fun decodeSampledBitmap(file: File): Bitmap {
-        if (!file.isFile) throw IllegalStateException("图片文件不存在")
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("图片损坏或格式不受支持")
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inMutable = false
-        }
-        return BitmapFactory.decodeFile(file.absolutePath, options)
-            ?: throw IllegalStateException("图片解码失败")
     }
 
     private fun renderPdfPage(file: File, pageIndex: Int): Bitmap {
@@ -250,20 +250,14 @@ class LocalReaderViewModel(
         return file
     }
 
-    private fun sampleSize(width: Int, height: Int): Int {
-        var sample = 1
-        while (width / sample > MAX_DECODE_WIDTH || height / sample > MAX_DECODE_HEIGHT) sample *= 2
-        return sample
-    }
-
     override fun onCleared() {
+        pageRequestId += 1
         pageJob?.cancel()
+        bitmapDecoder.clear()
         super.onCleared()
     }
 
     companion object {
-        private const val MAX_DECODE_WIDTH = 1800
-        private const val MAX_DECODE_HEIGHT = 2600
         private const val MAX_RENDER_WIDTH = 1800
         private const val MAX_TEXT_PAGE_CHARS = 2_000_000
 

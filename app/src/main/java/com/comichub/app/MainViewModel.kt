@@ -1,6 +1,7 @@
 package com.comichub.app
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,9 +18,10 @@ import com.comichub.data.LocalComicRepository
 import com.comichub.data.ReadingHistoryItem
 import com.comichub.data.RoomLibraryRepository
 import com.comichub.data.RoomLocalComicRepository
-import com.comichub.data.DownloadStatus
 import com.comichub.app.local.LocalComicImporter
 import com.comichub.app.local.LocalImportResult
+import com.comichub.app.reader.OnlineReaderImageLoader
+import com.comichub.app.reader.ReaderImageException
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicPage
@@ -55,7 +57,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI
@@ -131,12 +136,15 @@ class MainViewModel(
         cache = imageCache,
         fetch = { url -> imageFetcher?.invoke(url) ?: fetchImage(url) }
     )
+    private val onlineImageLoader = OnlineReaderImageLoader(imageCache, imageQueue)
     private val backStack = mutableListOf(AppScreen.SEARCH)
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
     private var localImportJob: Job? = null
     private var localDeleteJob: Job? = null
-    private var activeImagePageIds: Map<String, String> = emptyMap()
+    private var readerGeneration = 0L
+    private var readerProgressJob: Job? = null
+    private val readerProgressMutex = Mutex()
 
     val libraryItems: StateFlow<List<LibraryComic>> = library.observeLibrary().stateIn(
         scope = viewModelScope,
@@ -202,8 +210,7 @@ class MainViewModel(
         private set
     var pages by mutableStateOf<List<ComicPage>>(emptyList())
         private set
-    var imageBytes by mutableStateOf<Map<String, ByteArray>>(emptyMap())
-        private set
+    private var readerRetryVersions by mutableStateOf<Map<String, Int>>(emptyMap())
     var resumePage by mutableStateOf(1)
         private set
     var readerPage by mutableStateOf(1)
@@ -232,21 +239,6 @@ class MainViewModel(
         get() = pendingWebAction != null
 
     init {
-        viewModelScope.launch {
-            imageQueue.tasks.collect { tasks ->
-                val completed = tasks.filter { it.status == DownloadStatus.COMPLETED }
-                if (completed.isEmpty() || activeImagePageIds.isEmpty()) return@collect
-                val additions = withContext(Dispatchers.IO) {
-                    completed.mapNotNull { task ->
-                        val pageId = activeImagePageIds[task.url] ?: return@mapNotNull null
-                        imageCache.get(task.url)?.let { bytes -> pageId to bytes }
-                    }.toMap()
-                }
-                if (additions.isNotEmpty()) {
-                    imageBytes = imageBytes + additions
-                }
-            }
-        }
         viewModelScope.launch {
             try {
                 reloadPluginSources()
@@ -286,7 +278,7 @@ class MainViewModel(
 
     fun openComic(comic: ComicSummary) {
         navigationJob?.cancel()
-        activeImagePageIds = emptyMap()
+        invalidateReaderSession()
         navigationJob = viewModelScope.launch {
             isLoading = true
             errorMessage = null
@@ -331,8 +323,13 @@ class MainViewModel(
     }
 
     fun openChapter(chapter: Chapter) {
+        if (screen == AppScreen.READER && selectedChapter?.id == chapter.id && !isLoading) return
         navigationJob?.cancel()
-        activeImagePageIds = emptyMap()
+        val generation = beginReaderSession()
+        selectedChapter = chapter
+        pages = emptyList()
+        readerProgressLoaded = false
+        readerPage = 1
         navigationJob = viewModelScope.launch {
             isLoading = true
             errorMessage = null
@@ -345,12 +342,9 @@ class MainViewModel(
                 }
                 val source = registry.require(chapter.sourceId)
                 val loadedPages = source.pages(chapter.id)
+                if (generation != readerGeneration) return@launch
                 selectedChapter = chapter
                 pages = loadedPages
-                imageBytes = emptyMap()
-                activeImagePageIds = loadedPages.mapNotNull { page ->
-                    page.imageUrl?.let { url -> url to page.id }
-                }.toMap()
                 readerProgressLoaded = false
                 navigateTo(AppScreen.READER)
                 val progress = try {
@@ -360,25 +354,17 @@ class MainViewModel(
                     errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
                     null
                 }
+                if (generation != readerGeneration) return@launch
                 resumePage = progress?.currentPage ?: 1
                 readerPage = resumePage
                 readerProgressLoaded = true
-                val imageUrls = loadedPages.mapNotNull(ComicPage::imageUrl)
-                if (imageUrls.isEmpty() && loadedPages.isEmpty()) {
+                if (loadedPages.isEmpty()) {
                     errorMessage = "本章节没有可显示的图片"
-                } else if (imageUrls.isNotEmpty()) {
-                    val tasks = imageQueue.download(imageUrls)
-                    imageBytes = loadedPages.mapNotNull { page ->
-                        val url = page.imageUrl ?: return@mapNotNull null
-                        imageCache.get(url)?.let { bytes -> page.id to bytes }
-                    }.toMap()
-                    if (tasks.any { task -> task.status == DownloadStatus.FAILED }) {
-                        errorMessage = "部分页面图片加载失败，请点击“重试图片”"
-                    }
                 }
                 pendingWebAction = null
             } catch (sourceError: Throwable) {
                 if (sourceError is CancellationException) throw sourceError
+                if (generation != readerGeneration) return@launch
                 if (sourceError is MyComicChallengeException) {
                     selectedChapter = chapter
                     webReaderUrl = sourceError.url
@@ -389,7 +375,7 @@ class MainViewModel(
                     errorMessage = "打开章节失败：${sourceError.message ?: "未知错误"}"
                 }
             }
-            isLoading = false
+            if (generation == readerGeneration) isLoading = false
         }
     }
 
@@ -459,37 +445,25 @@ class MainViewModel(
         }
     }
 
-    fun retryReaderImages() {
-        if (isLoading) return
-        val imageUrls = pages.mapNotNull(ComicPage::imageUrl)
-        if (imageUrls.isEmpty()) {
-            errorMessage = "当前章节没有可重试的图片"
-            return
+    suspend fun loadReaderImage(page: ComicPage): Bitmap {
+        val chapter = selectedChapter
+        require(chapter?.id == page.chapterId) { "页面不属于当前章节" }
+        val generation = readerGeneration
+        val url = page.imageUrl ?: throw ReaderImageException("当前页面没有图片地址")
+        val bitmap = onlineImageLoader.load(url)
+        if (generation != readerGeneration || selectedChapter?.id != chapter.id) {
+            throw CancellationException("页面已过期")
         }
-        viewModelScope.launch {
-            isLoading = true
-            errorMessage = null
-            activeImagePageIds = pages.mapNotNull { page ->
-                page.imageUrl?.let { url -> url to page.id }
-            }.toMap()
-            try {
-                val tasks = imageQueue.download(imageUrls)
-                imageBytes = pages.mapNotNull { page ->
-                    val url = page.imageUrl ?: return@mapNotNull null
-                    imageCache.get(url)?.let { bytes -> page.id to bytes }
-                }.toMap()
-                if (tasks.any { it.status == DownloadStatus.FAILED }) {
-                    errorMessage = "部分页面图片仍然加载失败，请稍后重试"
-                } else {
-                    actionMessage = infoMessage("图片加载完成")
-                }
-            } catch (error: Throwable) {
-                if (error is CancellationException) throw error
-                errorMessage = error.message ?: "图片加载失败"
-            } finally {
-                isLoading = false
-            }
-        }
+        return bitmap
+    }
+
+    fun readerRetryVersion(pageId: String): Int = readerRetryVersions[pageId] ?: 0
+
+    fun retryReaderPage(page: ComicPage) {
+        val url = page.imageUrl ?: return
+        imageCache.remove(url)
+        onlineImageLoader.clearPage(url)
+        readerRetryVersions = readerRetryVersions + (page.id to (readerRetryVersions[page.id] ?: 0) + 1)
     }
 
     fun importLocalFiles(uris: List<Uri>) {
@@ -601,12 +575,25 @@ class MainViewModel(
         val chapter = selectedChapter ?: return
         val totalPages = pages.size
         readerPage = page.coerceIn(1, totalPages.coerceAtLeast(1))
-        viewModelScope.launch {
+        val generation = readerGeneration
+        val pageToPersist = readerPage
+        readerProgressJob?.cancel()
+        readerProgressJob = viewModelScope.launch {
             try {
-                library.updateProgress(chapter, readerPage, totalPages)
-                    .also { resumePage = it.currentPage }
+                readerProgressMutex.withLock {
+                    withContext(NonCancellable) {
+                        library.updateProgress(chapter, pageToPersist, totalPages)
+                    }.also {
+                        if (generation == readerGeneration && selectedChapter?.id == chapter.id) {
+                            resumePage = it.currentPage
+                        }
+                    }
+                }
             } catch (storageError: Throwable) {
-                errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                if (storageError is CancellationException) throw storageError
+                if (generation == readerGeneration && selectedChapter?.id == chapter.id) {
+                    errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                }
             }
         }
     }
@@ -785,6 +772,9 @@ class MainViewModel(
         if (backStack.size <= 1) return
         navigationJob?.cancel()
         navigationJob = null
+        if (screen == AppScreen.READER || screen == AppScreen.WEB_READER) {
+            invalidateReaderSession()
+        }
         isLoading = false
         popScreen()
         pendingWebAction = null
@@ -811,6 +801,21 @@ class MainViewModel(
         if (backStack.size <= 1) return
         backStack.removeAt(backStack.lastIndex)
         screen = backStack.last()
+    }
+
+    private fun beginReaderSession(): Long {
+        readerGeneration += 1
+        onlineImageLoader.clearMemory()
+        readerRetryVersions = emptyMap()
+        readerProgressJob?.cancel()
+        return readerGeneration
+    }
+
+    private fun invalidateReaderSession() {
+        readerGeneration += 1
+        onlineImageLoader.clearMemory()
+        readerRetryVersions = emptyMap()
+        readerProgressJob?.cancel()
     }
 
     private suspend fun reloadPluginSources() {
@@ -896,10 +901,16 @@ class MainViewModel(
                         ?: selectedDetail?.summary?.id
                         ?: MyComicSource.SITE_URL
                 ),
-                sourceId = MyComicSource.SOURCE_ID
+                sourceId = MyComicSource.SOURCE_ID,
+                bodyMode = com.comichub.source.runtime.NetworkBodyMode.BINARY,
+                maxResponseBytes = MAX_IMAGE_RESPONSE_BYTES
             )
         } else {
-            NetworkRequest(url)
+            NetworkRequest(
+                url = url,
+                bodyMode = com.comichub.source.runtime.NetworkBodyMode.BINARY,
+                maxResponseBytes = MAX_IMAGE_RESPONSE_BYTES
+            )
         }
         return when (
             val result = gateway.get(
@@ -944,10 +955,12 @@ class MainViewModel(
 
     override fun onCleared() {
         myComicWebSession?.destroy()
+        invalidateReaderSession()
         super.onCleared()
     }
 
     companion object {
+        private const val MAX_IMAGE_RESPONSE_BYTES = 24L * 1024L * 1024L
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {

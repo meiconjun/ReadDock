@@ -29,6 +29,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -48,7 +49,7 @@ class MainViewModelTest {
         localRepository = FakeLocalComicRepository()
     }
 
-    private fun createViewModel(): MainViewModel = MainViewModel(
+    private fun createViewModel(imageFetchCount: AtomicInteger? = null): MainViewModel = MainViewModel(
         context,
         repository,
         MyComicSource { url ->
@@ -81,7 +82,10 @@ class MainViewModelTest {
                 else -> error("missing MYCOMIC test fixture: $url")
             }
         },
-        imageFetcher = { byteArrayOf(1, 2, 3) },
+        imageFetcher = {
+            imageFetchCount?.incrementAndGet()
+            byteArrayOf(1, 2, 3)
+        },
         localComicRepository = localRepository
     )
 
@@ -135,6 +139,21 @@ class MainViewModelTest {
         assertEquals(AppScreen.READER, viewModel.screen, viewModel.errorMessage)
         assertEquals(MyComicSource.FIRST_CHAPTER_URL, viewModel.selectedChapter?.id)
         assertEquals(2, viewModel.pages.size)
+    }
+
+    @Test
+    fun `opening a chapter does not eagerly fetch every image`() = runTest {
+        val fetchCount = AtomicInteger(0)
+        val viewModel = createViewModel(fetchCount)
+        advanceUntilIdle()
+        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        viewModel.openChapter(viewModel.selectedDetail!!.chapters.first())
+        advanceUntilIdle()
+
+        assertEquals(0, fetchCount.get())
+        assertEquals(6, viewModel.pages.size)
     }
 
     @Test

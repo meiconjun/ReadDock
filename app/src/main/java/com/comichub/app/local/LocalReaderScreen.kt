@@ -1,6 +1,5 @@
 package com.comichub.app.local
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,10 +27,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.comichub.app.reader.ZoomableReaderImage
 
 @Composable
 fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
@@ -66,7 +65,12 @@ fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
             }
             LocalReaderStatus.SUCCESS -> {
                 ReaderPageHeader(state)
-                ReaderPageContent(state, viewModel::retry)
+                ReaderPageContent(
+                    state = state,
+                    onRetry = viewModel::retry,
+                    onPreviousPage = viewModel::previousPage,
+                    onNextPage = viewModel::nextPage
+                )
                 ReaderPageControls(
                     currentPage = state.currentPage,
                     pageCount = state.pageCount,
@@ -104,7 +108,12 @@ private fun ReaderPageHeader(state: LocalReaderState) {
 }
 
 @Composable
-private fun ColumnScope.ReaderPageContent(state: LocalReaderState, onRetry: () -> Unit) {
+private fun ColumnScope.ReaderPageContent(
+    state: LocalReaderState,
+    onRetry: () -> Unit,
+    onPreviousPage: () -> Unit,
+    onNextPage: () -> Unit
+) {
     val content = state.content
     Box(
         modifier = Modifier
@@ -127,11 +136,13 @@ private fun ColumnScope.ReaderPageContent(state: LocalReaderState, onRetry: () -
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = onRetry) { Text("重试本页") }
             }
-            content?.bitmap != null -> Image(
-                bitmap = content.bitmap.asImageBitmap(),
+            content?.bitmap != null -> ZoomableReaderImage(
+                image = content.bitmap.asImageBitmap(),
+                pageKey = content.page,
                 contentDescription = "第 ${state.currentPage} 页",
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+                onPreviousPage = onPreviousPage,
+                onNextPage = onNextPage
             )
             content?.text != null -> Column(
                 modifier = Modifier

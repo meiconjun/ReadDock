@@ -83,4 +83,25 @@ class NetworkGatewayTest {
         assertEquals(1, result.attempts)
         assertEquals(1, calls)
     }
+
+    @Test
+    fun `keeps binary request metadata for bounded image responses`() = runBlocking {
+        var captured: NetworkRequest? = null
+        val gateway = NetworkGateway(NetworkTransport { request ->
+            captured = request
+            NetworkResponse(200, bodyBytes = byteArrayOf(1, 2, 3))
+        }, sleeper = {})
+
+        val request = NetworkRequest(
+            url = "https://example.com/page.jpg",
+            bodyMode = NetworkBodyMode.BINARY,
+            maxResponseBytes = 128
+        )
+        val result = gateway.get(request, fastPolicy)
+
+        assertIs<GatewayResult.Success>(result)
+        assertEquals(NetworkBodyMode.BINARY, captured?.bodyMode)
+        assertEquals(128L, captured?.maxResponseBytes)
+        assertEquals(byteArrayOf(1, 2, 3).toList(), result.response.bodyBytes?.toList())
+    }
 }

@@ -519,6 +519,54 @@
 - 最新 Git commit：`c8f79cd7397da3ae48f89c2ca80abd62d2b74640`
 - 当前 APK SHA-256：`4FFB0A4C941057C8AFCCE8E6DC319AF8E1174B2E4CEE073D37A3BCA9CD01127F`
 
+### Iteration 16：统一阅读器手势与受限图片加载
+
+状态：已完成
+
+目标：统一本地和在线图片阅读器的缩放、拖拽与横向翻页手势，按页面受限加载在线图片，并隔离快速切页/切章时的异步结果，降低大图 OOM 和旧页面串入风险。
+
+完成内容：
+
+- 新增共享 `ZoomableReaderImage`：支持 1x–4x 双指缩放、以点击位置为中心的双击 2.5x 放大/还原、缩放拖拽和边界限制
+- 未缩放时仅消费明显占优且达到约 64dp 的横向滑动；纵向滑动放行给在线 `LazyColumn`，缩放、拖拽、双指和双击不会触发翻页
+- 本地阅读器保留单页显示，增加带请求序号的解码任务取消和旧 Bitmap 写回保护；EPUB、MOBI、PDF 继续走本地解析/文件路径，不进入 WebView
+- 在线阅读器移除整章 `ByteArray` 缓存，改为可见页面按需下载、磁盘文件 bounds/采样解码，Compose 页面离开列表后取消任务；增加 24 MB Bitmap LRU、256 MB 磁盘缓存和 32 MB 单文件限制
+- `NetworkRequest` 增加二进制响应模式和响应字节上限；图片请求限制为 24 MB，传输层超限时明确失败，避免额外 UTF-8 字符串副本
+- 下载队列增加单页加载、并发 URL 去重和取消；单页失败仅重试目标页
+- 章节、页面、图片预取和进度写入增加 reader generation/token 校验；章节导航幂等，快速切章、返回和 ViewModel 销毁时清理任务、页面引用及解码缓存
+- 保留本地文件不上传网络的路径；在线图片仍通过现有授权会话/请求头获取
+
+关键文件：
+
+- `app/src/main/java/com/comichub/app/reader/ReaderGestures.kt`
+- `app/src/main/java/com/comichub/app/reader/ReaderImageLoader.kt`
+- `app/src/main/java/com/comichub/app/MainViewModel.kt`
+- `app/src/main/java/com/comichub/app/local/LocalReaderViewModel.kt`
+- `app/src/main/java/com/comichub/app/ui/ComicHubApp.kt`
+- `core/data/src/main/kotlin/com/comichub/data/ImageDownloadQueue.kt`
+- `core/data/src/main/kotlin/com/comichub/data/FileImageCache.kt`
+- `core/source-runtime/src/main/kotlin/com/comichub/source/runtime/NetworkGateway.kt`
+- `core/source-runtime/src/main/kotlin/com/comichub/source/runtime/UrlConnectionTransport.kt`
+
+验证结果：
+
+- `gradle :core:source-runtime:test`：36 个测试通过
+- `gradle :core:data:testDebugUnitTest`：7 个测试通过
+- `gradle :app:testDebugUnitTest`：19 个测试通过
+- `gradle :app:assembleDebug`：通过
+- 本轮上述测试合计：62 个通过，0 个失败
+- 新增/覆盖单页按需加载、并发下载去重、缓存单项大小限制、二进制响应元数据保留、采样解码和章节不整章预取测试
+- APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
+- APK SHA-256：`C6546EB18719533E35C91682B15F930830A94CE0A971F49D1BB3D50FC4FD4CEE`
+
+模拟器验证结果：
+
+- 设备：`emulator-5554`，安装 Debug APK 成功
+- 本地真实 EPUB `claymore test` 打开成功，共 184 页；双击放大后横向拖拽仍停留在第 22 页，双击还原后横滑到第 23 页，快速连续横滑到第 28 页
+- 在线授权缓存章节《猎人游戏 W》第 07 话打开成功；纵向滚动从第 1/2 页移动到第 2/3 页，横滑定位到第 3/4 页；第 3 页缩放后横向拖拽未误翻页，返回并重新进入恢复第 3 页
+- 通过 `adb logcat` 检查未发现 App 的 `FATAL EXCEPTION` 或 `OutOfMemoryError`；筛选到的 `AndroidRuntime` 仅为 Monkey 启动命令正常退出
+- 未观察到旧图片、旧章节错误或旧进度串入当前页面，也未发现重复导航或崩溃
+
 ## 当前技术原则
 
 - 简单 HTML 源优先使用声明式 CSS 选择器

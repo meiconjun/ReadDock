@@ -9,23 +9,35 @@ import java.security.MessageDigest
 /** Small file-backed image cache with deterministic keys and LRU-style eviction. */
 class FileImageCache(
     private val directory: File,
-    private val maxBytes: Long = 256L * 1024L * 1024L
+    private val maxBytes: Long = 256L * 1024L * 1024L,
+    private val maxEntryBytes: Long = 32L * 1024L * 1024L
 ) {
     init {
         require(maxBytes > 0) { "maxBytes must be positive" }
+        require(maxEntryBytes > 0) { "maxEntryBytes must be positive" }
         directory.mkdirs()
     }
 
     @Synchronized
     fun get(url: String): ByteArray? {
+        val file = getFile(url) ?: return null
+        return file.readBytes()
+    }
+
+    /** Returns the cached file without copying its compressed bytes into heap memory. */
+    @Synchronized
+    fun getFile(url: String): File? {
         val file = fileFor(url)
         if (!file.isFile) return null
         file.setLastModified(System.currentTimeMillis())
-        return file.readBytes()
+        return file
     }
 
     @Synchronized
     fun put(url: String, bytes: ByteArray) {
+        require(bytes.size.toLong() <= maxEntryBytes) {
+            "图片过大（${bytes.size} bytes，限制 $maxEntryBytes bytes）"
+        }
         val temporary = File.createTempFile("image-", ".tmp", directory)
         try {
             temporary.writeBytes(bytes)
@@ -34,6 +46,11 @@ class FileImageCache(
         } finally {
             if (temporary.exists()) temporary.delete()
         }
+    }
+
+    @Synchronized
+    fun remove(url: String) {
+        fileFor(url).delete()
     }
 
     @Synchronized

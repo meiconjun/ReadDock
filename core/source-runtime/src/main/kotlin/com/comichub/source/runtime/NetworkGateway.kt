@@ -12,11 +12,26 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 
+enum class NetworkBodyMode {
+    TEXT,
+    BINARY
+}
+
 data class NetworkRequest(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
-    val sourceId: String? = null
-)
+    val sourceId: String? = null,
+    val bodyMode: NetworkBodyMode = NetworkBodyMode.TEXT,
+    val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES
+) {
+    init {
+        require(maxResponseBytes > 0) { "maxResponseBytes must be positive" }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024L * 1024L
+    }
+}
 
 data class NetworkResponse(
     val statusCode: Int,

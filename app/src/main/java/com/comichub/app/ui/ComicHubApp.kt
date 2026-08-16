@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -63,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Modifier
@@ -80,6 +82,7 @@ import com.comichub.app.MessageTone
 import com.comichub.app.UiMessage
 import com.comichub.app.LocalImportStatus
 import com.comichub.app.local.LocalReaderScreen
+import com.comichub.app.reader.ZoomableReaderImage
 import com.comichub.data.LocalComic
 import com.comichub.data.LibraryComic
 import com.comichub.data.ReadingHistoryItem
@@ -90,6 +93,8 @@ import com.comichub.source.runtime.SourceHealthSnapshot
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -805,6 +810,7 @@ private fun DetailScreen(
 @Composable
 private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val restoredPosition = remember(viewModel.selectedChapter?.id) { mutableStateOf(false) }
     val previousChapter = viewModel.previousChapter()
     val nextChapter = viewModel.nextChapter()
@@ -896,57 +902,120 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             )
         }
         items(viewModel.pages, key = { it.id }) { page ->
-            val bitmap = remember(viewModel.imageBytes[page.id]) {
-                viewModel.imageBytes[page.id]?.let { bytes ->
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                }
-            }
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = "第 ${page.index} 页",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 240.dp)
-                        .background(Color.Black),
-                    contentScale = ContentScale.FillWidth
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(280.dp)
-                        .background(Color(0xFF171717)),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
-                ) {
-                    val message = when {
-                        viewModel.isLoading && page.imageUrl != null -> "图片加载中…"
-                        page.imageUrl != null -> "图片加载失败，可点击“重试图片”"
-                        else -> page.displayText ?: "图片页面 ${page.index}"
+            OnlineReaderPage(
+                viewModel = viewModel,
+                page = page,
+                onPreviousPage = {
+                    val target = (page.index - 2).coerceAtLeast(0)
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(READER_HEADER_ITEM_COUNT + target)
                     }
-                    Text(
-                        message,
-                        modifier = Modifier.padding(24.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.LightGray
-                    )
+                },
+                onNextPage = {
+                    val target = (page.index).coerceAtMost(viewModel.pages.lastIndex)
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(READER_HEADER_ITEM_COUNT + target)
+                    }
                 }
-            }
+            )
         }
-        item {
-            if (viewModel.errorMessage != null && viewModel.pages.any { it.imageUrl != null }) {
-                TextButton(
-                    onClick = viewModel::retryReaderImages,
-                    enabled = !viewModel.isLoading,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = Color.White,
-                        disabledContentColor = Color(0xFF666666)
-                    )
-                ) {
-                    Text("重试图片")
-                }
-            }
+    }
+}
+
+private data class OnlinePageUiState(
+    val loading: Boolean,
+    val bitmap: Bitmap? = null,
+    val error: String? = null
+)
+
+@Composable
+private fun OnlineReaderPage(
+    viewModel: MainViewModel,
+    page: com.comichub.source.api.ComicPage,
+    onPreviousPage: () -> Unit,
+    onNextPage: () -> Unit
+) {
+    val retryVersion = viewModel.readerRetryVersion(page.id)
+    val pageState by produceState(
+        initialValue = OnlinePageUiState(loading = page.imageUrl != null),
+        viewModel.selectedChapter?.id,
+        page.id,
+        page.imageUrl,
+        retryVersion
+    ) {
+        if (page.imageUrl == null) {
+            value = OnlinePageUiState(loading = false)
+            return@produceState
         }
+        value = OnlinePageUiState(loading = true)
+        try {
+            value = OnlinePageUiState(
+                loading = false,
+                bitmap = withContext(Dispatchers.IO) { viewModel.loadReaderImage(page) }
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            value = OnlinePageUiState(
+                loading = false,
+                error = error.message ?: "图片加载失败"
+            )
+        }
+    }
+
+    when {
+        pageState.bitmap != null -> {
+            val bitmap = pageState.bitmap!!
+            ZoomableReaderImage(
+                image = bitmap.asImageBitmap(),
+                pageKey = page.id,
+                contentDescription = "第 ${page.index} 页",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1))
+                    .heightIn(min = 240.dp),
+                onPreviousPage = onPreviousPage,
+                onNextPage = onNextPage
+            )
+        }
+        pageState.loading -> ReaderPagePlaceholder("正在加载第 ${page.index} 页…")
+        pageState.error != null -> Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp)
+                .background(Color(0xFF171717))
+                .padding(24.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "第 ${page.index} 页加载失败：${pageState.error}",
+                color = Color.LightGray
+            )
+            TextButton(
+                onClick = { viewModel.retryReaderPage(page) },
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+            ) { Text("重试本页") }
+        }
+        else -> ReaderPagePlaceholder(page.displayText ?: "图片页面 ${page.index}")
+    }
+}
+
+@Composable
+private fun ReaderPagePlaceholder(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp)
+            .background(Color(0xFF171717)),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        Text(
+            message,
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.LightGray
+        )
     }
 }
 
