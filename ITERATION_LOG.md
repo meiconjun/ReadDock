@@ -6,8 +6,8 @@
 
 - 项目代号：ComicHub
 - 平台：Android
-- 当前阶段：MVP 阅读器、本地数据与源可观测性
-- 当前版本：0.1.0 prototype
+- 当前阶段：在线/本地漫画阅读器与插件化源基础能力
+- 当前版本：0.4.0
 - 最近构建：Debug APK 构建成功
 - 当前 APK：[app-debug.apk](H:/comicfree/app/build/outputs/apk/debug/app-debug.apk)
 
@@ -402,7 +402,7 @@
 - 搜索无结果时显示明确空状态，不再只显示空白列表
 - 插件导入失败、仓库 HTTPS/key 配置错误、签名/下载失败使用错误色提示
 - 增加非法仓库 URL和非法插件导入的 ViewModel 回归测试
-- 明确记录当前 UI 仅服务于功能验收，暂不进行视觉重构
+- 当时明确记录 UI 仅服务于功能验收；后续 Iteration 15 已完成阅读器布局精修
 
 关键文件：
 
@@ -450,6 +450,75 @@
 
 仍待处理：真实授权漫画源需要用户提供具体源、许可证明或访问凭据；在此之前只能完成本地合成 fixture 和通用接入能力。WebView 用户交互通道仍是后续工作。
 
+### Iteration 14：本地漫画导入与独立阅读器
+
+状态：已完成
+
+目标：在不伪装成本地在线源、不上传用户文件和不破坏现有在线漫画流程的前提下，支持导入并阅读本地漫画。
+
+完成内容：
+
+- 使用 Android Storage Access Framework 支持单文件、多选图片和文件夹递归导入
+- 导入文件复制到 App 私有目录，使用文件哈希去重，避免原始 URI 失效
+- 新增独立 `LocalComic` 数据模型、Room 持久化和本地书架
+- 支持 JPG、JPEG、PNG、WEBP、GIF、PDF、EPUB、MOBI，并额外支持 CBZ/ZIP
+- 图片按文件名自然排序；损坏图片按页面报告错误，不影响其他页面
+- PDF 使用 `PdfRenderer` 按页读取并正确关闭渲染资源
+- EPUB 解析容器、manifest、spine 和图片资源；无图片内容时支持文字页
+- MOBI 在本地后台解析，无法解析时显示明确错误
+- 新增独立 `LocalReaderScreen` 和 `LocalReaderViewModel`，不复用在线网页阅读器
+- 阅读进度保存到 Room，App 重启后可恢复
+- 修复阅读进度写入依赖页面加载任务、快速返回时可能被取消的问题；进度写入改为独立串行任务
+- 删除本地漫画前确认，删除后立即从书架移除
+
+关键文件：
+
+- `app/src/main/java/com/comichub/app/local/LocalComicImporter.kt`
+- `app/src/main/java/com/comichub/app/local/LocalComicParser.kt`
+- `app/src/main/java/com/comichub/app/local/LocalReaderScreen.kt`
+- `app/src/main/java/com/comichub/app/local/LocalReaderViewModel.kt`
+- `core/data/src/main/kotlin/com/comichub/data/LibraryEntities.kt`
+- `core/data/src/main/kotlin/com/comichub/data/LibraryRepository.kt`
+
+验证结果：
+
+- `gradle test`：通过
+- `gradle :app:assembleDebug`：通过
+- 使用实际约 137 MB EPUB 文件导入成功，解析为 184 页
+- 模拟器验证封面、EPUB 页面、翻页、快速返回、Room 进度恢复和删除流程
+- 未发现 `FATAL EXCEPTION` 或 `OutOfMemoryError`
+- APK 版本：versionCode 6，versionName 0.4.0
+
+### Iteration 15：本地与在线阅读器布局统一
+
+状态：已完成
+
+目标：解决阅读页面外围大片浅色留白和 Card 边框问题，统一本地图片阅读器与在线图片阅读器的阅读体验，同时保持 MYCOMIC WebView 会话流程不变。
+
+完成内容：
+
+- 本地阅读器改为黑色沉浸式阅读画布
+- 本地漫画页面移除重复标题和多余内边距，图片尽量铺满可用宽度
+- 在线图片阅读器移除页面外围 Card、12dp 外边距和页间空隙
+- 在线漫画页面改为连续全宽显示，加载和错误占位使用深色画布
+- 在线和本地阅读器顶部栏、翻页/章节控件和系统导航区域统一深色风格
+- 使用 `ContentScale.Fit` 保持本地漫画页面完整，不因填充而裁切内容
+- 保持在线阅读器的 Room 进度、章节切换、图片重试和 MYCOMIC WebView 验证流程不变
+
+关键文件：
+
+- `app/src/main/java/com/comichub/app/local/LocalReaderScreen.kt`
+- `app/src/main/java/com/comichub/app/ui/ComicHubApp.kt`
+
+验证结果：
+
+- `gradle test :app:assembleDebug`：通过
+- 模拟器验证本地 EPUB 184 页阅读器布局
+- 模拟器验证在线《猎人游戏 W》第 07 话图片全宽显示
+- 未发现 `FATAL EXCEPTION` 或 `OutOfMemoryError`
+- 最新 Git commit：`c8f79cd7397da3ae48f89c2ca80abd62d2b74640`
+- 当前 APK SHA-256：`4FFB0A4C941057C8AFCCE8E6DC319AF8E1174B2E4CEE073D37A3BCA9CD01127F`
+
 ## 当前技术原则
 
 - 简单 HTML 源优先使用声明式 CSS 选择器
@@ -462,9 +531,11 @@
 
 ## 下一迭代候选
 
-1. 在获得具体授权源信息后，替换合成 fixture 并完成真实源端到端验证
-2. WebView 用户交互通道和结构化 `REQUIRES_USER_INTERACTION` 错误
-3. UI 视觉和交互精修（核心功能稳定后再做）
+1. 阅读器手势统一：双指缩放、拖拽、双击放大/还原和左右滑动翻页
+2. 在线大图采样、有限缓存和页面生命周期清理，降低 OOM 风险
+3. 在获得具体授权源信息后，替换合成 fixture 并完成真实源端到端验证
+4. WebView 用户交互通道和结构化 `REQUIRES_USER_INTERACTION` 错误
+5. PDF、MOBI、CBZ/ZIP 真实文件的模拟器回归验证
 
 ## 开发验证命令
 
