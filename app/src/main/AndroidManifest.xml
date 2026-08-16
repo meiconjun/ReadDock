@@ -6,6 +6,7 @@
         android:allowBackup="true"
         android:label="ComicHub"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.ComicHub">
         <activity
             android:name=".MainActivity"

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 data class ReadingHistoryRow(
@@ -78,14 +79,17 @@ interface LibraryDao {
     )
     fun observeHistory(): Flow<List<ReadingHistoryRow>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertComic(comic: ComicEntity)
-
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertComicIfMissing(comic: ComicEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertChapters(chapters: List<ChapterEntity>)
+    @Update
+    suspend fun updateComic(comic: ComicEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChaptersIfMissing(chapters: List<ChapterEntity>)
+
+    @Update
+    suspend fun updateChapters(chapters: List<ChapterEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLibraryEntry(entry: LibraryEntryEntity)

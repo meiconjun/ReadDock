@@ -49,6 +49,21 @@ class MyComicWebSession(context: Context) {
         }
     }
 
+    /**
+     * Return the same browser identity for image requests that was used to
+     * obtain the MYCOMIC HTML. The site/CDN commonly rejects a plain
+     * HttpURLConnection request without the WebView cookie and referrer.
+     */
+    fun imageRequestHeaders(url: String, referer: String): Map<String, String> {
+        val cookie = CookieManager.getInstance().getCookie(url).orEmpty()
+        return buildMap {
+            put("User-Agent", WebSettings.getDefaultUserAgent(appContext))
+            put("Referer", referer)
+            put("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            if (cookie.isNotBlank()) put("Cookie", cookie)
+        }
+    }
+
     fun destroy() {
         mainHandler.post {
             pending?.fail(IllegalStateException("MYCOMIC 网页会话已关闭"))
@@ -92,7 +107,7 @@ class MyComicWebSession(context: Context) {
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                if (request.isForMainFrame && pending?.url == request.url.toString()) {
+                if (request.isForMainFrame && pending != null) {
                     pending?.fail(IllegalStateException(error.description?.toString() ?: "网页加载失败"))
                     pending = null
                 }

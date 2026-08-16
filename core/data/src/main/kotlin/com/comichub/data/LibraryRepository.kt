@@ -99,8 +99,15 @@ class RoomLibraryRepository(
 
     override suspend fun saveComic(detail: ComicDetail) {
         val now = clock()
-        dao.upsertComic(detail.summary.toEntity(now, detail.author, detail.description))
-        dao.upsertChapters(detail.chapters.map { it.toEntity(now) })
+        // Do not use SQLite REPLACE here. REPLACE deletes the old parent row
+        // before inserting the new one, which triggers ON DELETE CASCADE on
+        // library_entries and reading_progress.
+        dao.insertComicIfMissing(detail.summary.toEntity(now, detail.author, detail.description))
+        dao.updateComic(detail.summary.toEntity(now, detail.author, detail.description))
+
+        val chapters = detail.chapters.map { it.toEntity(now) }
+        dao.insertChaptersIfMissing(chapters)
+        dao.updateChapters(chapters)
     }
 
     override suspend fun setSaved(comic: ComicSummary, saved: Boolean) {

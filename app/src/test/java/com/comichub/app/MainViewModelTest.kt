@@ -51,6 +51,10 @@ class MainViewModelTest {
                       <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
                     </a>
                 """.trimIndent()
+                url == "https://mycomic.com/cn/comics?q=%E4%B8%8D%E5%AD%98%E5%9C%A8&page=1" -> """
+                    <html><head><title>MYCOMIC 搜索</title></head>
+                    <body><main><p>没有结果</p></main></body></html>
+                """.trimIndent()
                 url == MyComicSource.COMIC_URL -> """
                     <html><head><title>烙印战士 - MYCOMIC</title></head><body>
                       <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
@@ -61,9 +65,16 @@ class MainViewModelTest {
                       </div>
                     </body></html>
                 """.trimIndent()
+                url == MyComicSource.FIRST_CHAPTER_URL -> """
+                    <html><body>
+                      <img class="page" src="https://biccam.com/chapters/15444/1.jpg">
+                      <img class="page" src="https://biccam.com/chapters/15444/2.jpg">
+                    </body></html>
+                """.trimIndent()
                 else -> error("missing MYCOMIC test fixture: $url")
             }
-        }
+        },
+        imageFetcher = { byteArrayOf(1, 2, 3) }
     )
 
     @After
@@ -103,7 +114,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `mycomic chapter opens in the browser session reader`() = runTest {
+    fun `mycomic chapter uses the browser session for data and app reader for images`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
 
@@ -113,8 +124,9 @@ class MainViewModelTest {
         viewModel.openChapter(viewModel.selectedDetail!!.chapters.single())
         advanceUntilIdle()
 
-        assertEquals(AppScreen.WEB_READER, viewModel.screen)
-        assertEquals(MyComicSource.FIRST_CHAPTER_URL, viewModel.webReaderUrl)
+        assertEquals(AppScreen.READER, viewModel.screen, viewModel.errorMessage)
+        assertEquals(MyComicSource.FIRST_CHAPTER_URL, viewModel.selectedChapter?.id)
+        assertEquals(2, viewModel.pages.size)
     }
 
     @Test
@@ -129,6 +141,115 @@ class MainViewModelTest {
         viewModel.back()
 
         assertEquals(AppScreen.SEARCH, viewModel.screen)
+    }
+
+    @Test
+    fun `favorite is observable, persistent and removable from the library`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        viewModel.toggleSaved()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.isSaved(comic))
+        viewModel.showLibrary()
+        assertEquals(AppScreen.LIBRARY, viewModel.screen)
+        assertEquals(comic.id, repository.library.value.single().comicId)
+        viewModel.back()
+        assertEquals(AppScreen.SEARCH, viewModel.screen)
+
+        val reopened = createViewModel()
+        advanceUntilIdle()
+        reopened.openComic(comic)
+        advanceUntilIdle()
+        assertTrue(reopened.isSaved(comic))
+        reopened.toggleSaved()
+        advanceUntilIdle()
+        assertTrue(repository.library.value.isEmpty())
+        assertTrue(!reopened.isSaved(comic))
+    }
+
+    @Test
+    fun `back stack returns reader to detail and rejects a foreign chapter`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        val detail = viewModel.selectedDetail!!
+        viewModel.openChapter(detail.chapters.first())
+        advanceUntilIdle()
+        assertEquals(AppScreen.READER, viewModel.screen)
+        viewModel.back()
+        assertEquals(AppScreen.DETAIL, viewModel.screen)
+
+        val foreign = Chapter(
+            id = "foreign",
+            sourceId = detail.summary.sourceId,
+            comicId = "another-comic",
+            title = "不属于当前漫画",
+            number = 99
+        )
+        viewModel.openChapter(foreign)
+        advanceUntilIdle()
+        assertEquals(AppScreen.DETAIL, viewModel.screen)
+        assertTrue(viewModel.errorMessage.orEmpty().contains("不属于当前漫画"))
+    }
+
+    @Test
+    fun `reader next chapter follows chapter numbers when source is newest first`() = runTest {
+        val chapters = listOf(
+            Chapter("chapter-3", "source", "comic", "第03话", 3),
+            Chapter("chapter-2", "source", "comic", "第02话", 2),
+            Chapter("chapter-1", "source", "comic", "第01话", 1)
+        )
+
+        assertEquals("chapter-2", adjacentChapter(chapters, "chapter-1", 1)?.id)
+        assertEquals("chapter-1", adjacentChapter(chapters, "chapter-2", -1)?.id)
+        assertEquals(null, adjacentChapter(chapters, "chapter-1", -1))
+        assertEquals(null, adjacentChapter(chapters, "chapter-3", 1))
+    }
+
+    @Test
+    fun `favorite storage failure gives visible feedback and rolls back optimistic state`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        repository.failWrites = true
+
+        viewModel.toggleSaved()
+        assertTrue(viewModel.isSaved(comic))
+        advanceUntilIdle()
+
+        assertTrue(!viewModel.isSaved(comic))
+        assertEquals(MessageTone.ERROR, viewModel.actionMessage?.tone)
+    }
+
+    @Test
+    fun `empty search and source failure expose user visible states`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.search("不存在")
+        advanceUntilIdle()
+        assertTrue(viewModel.results.isEmpty())
+        assertEquals(null, viewModel.errorMessage)
+
+        viewModel.openComic(
+            ComicSummary(
+                id = "missing",
+                sourceId = "com.comichub.mock",
+                title = "不存在的详情"
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(AppScreen.SEARCH, viewModel.screen)
+        assertTrue(viewModel.errorMessage.orEmpty().contains("打开漫画失败"))
     }
 
     @Test
@@ -161,16 +282,19 @@ private class FakeLibraryRepository : LibraryRepository {
     val history = MutableStateFlow<List<ReadingHistoryItem>>(emptyList())
     val progress = MutableStateFlow<ReadingProgress?>(null)
     private val details = mutableMapOf<String, ComicDetail>()
+    var failWrites: Boolean = false
 
     override fun observeLibrary(): Flow<List<LibraryComic>> = library
 
     override fun observeHistory(): Flow<List<ReadingHistoryItem>> = history
 
     override suspend fun saveComic(detail: ComicDetail) {
+        check(!failWrites) { "test storage failure" }
         details[comicKey(detail.summary)] = detail
     }
 
     override suspend fun setSaved(comic: ComicSummary, saved: Boolean) {
+        check(!failWrites) { "test storage failure" }
         if (saved) {
             val detail = details[comicKey(comic)]
             library.value = listOf(

@@ -84,6 +84,13 @@ class RoomLibraryRepositoryTest {
         val reopened = repository.recordChapterOpened(comic, chapter, totalPages = 6)
         assertEquals(4, reopened.currentPage)
 
+        // Re-entering a detail page refreshes comic/chapter metadata. This
+        // must not delete the favorite or its reading progress via cascades.
+        repository.saveComic(detail)
+        assertEquals(1, repository.observeLibrary().first().size)
+        assertEquals(1, repository.observeHistory().first().size)
+        assertEquals(4, repository.observeHistory().first().single().currentPage)
+
         repository.setSaved(comic, saved = false)
         assertTrue(repository.observeLibrary().first().isEmpty())
         assertEquals(1, repository.observeHistory().first().size)

@@ -9,7 +9,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -69,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import com.comichub.app.AppScreen
+import com.comichub.app.MainActivity
 import com.comichub.app.MainViewModel
 import com.comichub.app.MessageTone
 import com.comichub.app.UiMessage
@@ -83,25 +83,32 @@ import com.comichub.source.runtime.SourceHealthSnapshot
 @Composable
 fun ComicHubApp() {
     val context = LocalContext.current
+    val activity = context as? MainActivity
     val viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(context))
     val libraryItems by viewModel.libraryItems.collectAsStateWithLifecycle()
     val readingHistory by viewModel.readingHistory.collectAsStateWithLifecycle()
     val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
+    val savedIds by viewModel.savedIds.collectAsStateWithLifecycle()
 
-    // Android's edge-swipe back gesture is dispatched through the activity's
-    // OnBackPressedDispatcher. Handle it at the app level so every nested
-    // screen follows the same in-app navigation chain instead of finishing
-    // the activity and returning to the launcher.
-    BackHandler(enabled = viewModel.screen != AppScreen.SEARCH) {
-        viewModel.back()
+    DisposableEffect(activity, viewModel) {
+        activity?.setAppBackHandler {
+            if (viewModel.canGoBack) {
+                viewModel.back()
+                true
+            } else {
+                false
+            }
+        }
+        onDispose {
+            activity?.setAppBackHandler(null)
+        }
     }
 
     Scaffold(
         topBar = {
             if (viewModel.screen != AppScreen.SEARCH &&
                 viewModel.screen != AppScreen.LIBRARY &&
-                viewModel.screen != AppScreen.SOURCES &&
-                viewModel.screen != AppScreen.WEB_READER
+                viewModel.screen != AppScreen.SOURCES
             ) {
                 TopAppBar(
                     title = {
@@ -154,7 +161,7 @@ fun ComicHubApp() {
             AppScreen.SEARCH -> SearchScreen(viewModel, padding)
             AppScreen.LIBRARY -> LibraryScreen(viewModel, libraryItems, readingHistory, padding)
             AppScreen.SOURCES -> SourcesScreen(viewModel, sourceHealth, padding)
-            AppScreen.DETAIL -> DetailScreen(viewModel, padding)
+            AppScreen.DETAIL -> DetailScreen(viewModel, savedIds, padding)
             AppScreen.READER -> ReaderScreen(viewModel, padding)
             AppScreen.WEB_READER -> WebReaderScreen(viewModel, padding)
         }
@@ -191,7 +198,10 @@ private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
                 singleLine = true,
                 label = { Text("搜索漫画") }
             )
-            Button(onClick = { viewModel.search(input) }) {
+            Button(
+                onClick = { viewModel.search(input) },
+                enabled = !viewModel.isLoading
+            ) {
                 Text("搜索")
             }
         }
@@ -504,9 +514,13 @@ private fun SourcesScreen(
 }
 
 @Composable
-private fun DetailScreen(viewModel: MainViewModel, padding: PaddingValues) {
+private fun DetailScreen(
+    viewModel: MainViewModel,
+    savedIds: Set<String>,
+    padding: PaddingValues
+) {
     val detail = viewModel.selectedDetail ?: return
-    val saved = viewModel.isSaved(detail.summary)
+    val saved = viewModel.isSaved(detail.summary, savedIds)
 
     LazyColumn(
         modifier = Modifier
@@ -525,7 +539,10 @@ private fun DetailScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     Text(detail.summary.title, style = MaterialTheme.typography.headlineSmall)
                     Text("作者：${detail.author}")
                 }
-                IconButton(onClick = viewModel::toggleSaved) {
+                IconButton(
+                    onClick = viewModel::toggleSaved,
+                    enabled = !viewModel.isSaving
+                ) {
                     Icon(
                         imageVector = if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                         contentDescription = if (saved) "取消收藏" else "收藏"
@@ -535,15 +552,56 @@ private fun DetailScreen(viewModel: MainViewModel, padding: PaddingValues) {
         }
         item {
             ErrorNotice(viewModel.errorMessage)
+            viewModel.actionMessage?.let { InlineMessage(it) }
         }
         item {
-            Text(detail.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val coverBitmap = remember(viewModel.coverBytes) {
+                viewModel.coverBytes?.let { bytes ->
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }
+            }
+            if (coverBitmap != null) {
+                Image(
+                    bitmap = coverBitmap,
+                    contentDescription = "${detail.summary.title}封面",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    Text(
+                        "${detail.summary.title}\n封面加载中或不可用",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            Text(
+                detail.description.ifBlank { "暂无简介" },
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         item {
             Text("章节", style = MaterialTheme.typography.titleLarge)
         }
-        items(detail.chapters, key = { it.id }) { chapter ->
-            ChapterRow(chapter = chapter, onClick = { viewModel.openChapter(chapter) })
+        if (detail.chapters.isEmpty()) {
+            item {
+                Text("暂无章节", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            items(detail.chapters, key = { it.id }) { chapter ->
+                ChapterRow(
+                    chapter = chapter,
+                    onClick = { viewModel.openChapter(chapter) }
+                )
+            }
         }
     }
 }
@@ -552,6 +610,8 @@ private fun DetailScreen(viewModel: MainViewModel, padding: PaddingValues) {
 private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val listState = rememberLazyListState()
     val restoredPosition = remember(viewModel.selectedChapter?.id) { mutableStateOf(false) }
+    val previousChapter = viewModel.previousChapter()
+    val nextChapter = viewModel.nextChapter()
 
     LaunchedEffect(
         viewModel.selectedChapter?.id,
@@ -559,16 +619,20 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
         viewModel.readerProgressLoaded
     ) {
         if (viewModel.pages.isNotEmpty() && viewModel.readerProgressLoaded) {
-            listState.scrollToItem((viewModel.resumePage - 1).coerceIn(0, viewModel.pages.lastIndex))
+            listState.scrollToItem(
+                (READER_HEADER_ITEM_COUNT + viewModel.resumePage - 1)
+                    .coerceIn(READER_HEADER_ITEM_COUNT, READER_HEADER_ITEM_COUNT + viewModel.pages.lastIndex)
+            )
             restoredPosition.value = true
         }
     }
     LaunchedEffect(viewModel.selectedChapter?.id) {
-        snapshotFlow { listState.firstVisibleItemIndex }
+            snapshotFlow { listState.firstVisibleItemIndex }
             .collect { index ->
-                if (restoredPosition.value) viewModel.updateReadingProgress(index + 1)
+                val page = index - READER_HEADER_ITEM_COUNT + 1
+                if (restoredPosition.value && page > 0) viewModel.updateReadingProgress(page)
             }
-    }
+        }
 
     LazyColumn(
         modifier = Modifier
@@ -580,6 +644,26 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     ) {
         item {
             ErrorNotice(viewModel.errorMessage)
+            viewModel.actionMessage?.let { InlineMessage(it) }
+        }
+        item {
+            if (viewModel.isLoading) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("正在加载图片…")
+                }
+            }
+        }
+        item {
+            ReaderControls(
+                previousChapter = previousChapter,
+                nextChapter = nextChapter,
+                enabled = !viewModel.isLoading,
+                onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                onChapterList = viewModel::back,
+                onNext = { nextChapter?.let(viewModel::openChapter) }
+            )
         }
         item {
             Text(
@@ -611,14 +695,56 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = androidx.compose.ui.Alignment.Center
                     ) {
+                        val message = when {
+                            viewModel.isLoading && page.imageUrl != null -> "图片加载中…"
+                            page.imageUrl != null -> "图片加载失败，可点击“重试图片”"
+                            else -> page.displayText ?: "图片页面 ${page.index}"
+                        }
                         Text(
-                            page.displayText ?: page.imageUrl ?: "图片页面 ${page.index}",
+                            message,
                             modifier = Modifier.padding(24.dp),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
             }
+        }
+        item {
+            if (viewModel.errorMessage != null && viewModel.pages.any { it.imageUrl != null }) {
+                TextButton(
+                    onClick = viewModel::retryReaderImages,
+                    enabled = !viewModel.isLoading
+                ) {
+                    Text("重试图片")
+                }
+            }
+        }
+    }
+}
+
+private const val READER_HEADER_ITEM_COUNT = 4
+
+@Composable
+private fun ReaderControls(
+    previousChapter: Chapter?,
+    nextChapter: Chapter?,
+    enabled: Boolean,
+    onPrevious: () -> Unit,
+    onChapterList: () -> Unit,
+    onNext: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        TextButton(onClick = onPrevious, enabled = enabled && previousChapter != null) {
+            Text("上一章")
+        }
+        TextButton(onClick = onChapterList, enabled = enabled) {
+            Text("章节列表")
+        }
+        TextButton(onClick = onNext, enabled = enabled && nextChapter != null) {
+            Text("下一章")
         }
     }
 }
@@ -685,14 +811,34 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             factory = { webView },
             modifier = Modifier.fillMaxSize()
         )
-        pageError?.let { message ->
+        Column(
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .padding(12.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+        ) {
             Text(
-                message,
-                modifier = Modifier
-                    .align(androidx.compose.ui.Alignment.TopCenter)
-                    .padding(12.dp),
-                color = MaterialTheme.colorScheme.error
+                "MYCOMIC 会话验证",
+                style = MaterialTheme.typography.titleMedium
             )
+            Text(
+                "此页面仅用于完成站点会话验证；验证后会回到应用内图片阅读器。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            pageError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error)
+            }
+            viewModel.actionMessage?.let { InlineMessage(it) }
+            if (viewModel.canRetryWebAction) {
+                Button(
+                    onClick = viewModel::retryPendingWebAction,
+                    enabled = !viewModel.isLoading
+                ) {
+                    Text(if (viewModel.isLoading) "正在重试…" else "验证完成，重试")
+                }
+            }
         }
     }
 }
@@ -799,8 +945,19 @@ private fun sourceHealthLabel(health: SourceHealthSnapshot): String = when (heal
 @Composable
 private fun StatusMessage(viewModel: MainViewModel) {
     when {
-        viewModel.isLoading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-        viewModel.errorMessage != null -> ErrorNotice(viewModel.errorMessage)
+        viewModel.isLoading -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            Spacer(Modifier.size(8.dp))
+            Text("正在加载漫画…")
+        }
+        viewModel.errorMessage != null -> Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            ErrorNotice(viewModel.errorMessage)
+            TextButton(onClick = viewModel::retrySearch, enabled = !viewModel.isLoading) {
+                Text("重试")
+            }
+        }
         viewModel.results.isEmpty() -> Text(
             "没有找到漫画，试试其他关键词。",
             color = MaterialTheme.colorScheme.onSurfaceVariant
