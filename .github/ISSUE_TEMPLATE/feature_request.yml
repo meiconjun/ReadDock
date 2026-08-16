@@ -1,24 +1,24 @@
 name: Feature request
-description: Suggest a user-facing improvement
+description: 建议一个对用户有帮助的改进
 title: "[Feature] "
 labels: ["enhancement"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem to solve
+      label: 想解决什么问题
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposal
+      label: 你的想法
     validations:
       required: true
   - type: checkboxes
     id: policy
     attributes:
-      label: Policy
+      label: 责任确认
       options:
-        - label: This request does not require bypassing access controls or violating copyright/website terms.
+        - label: 这个建议不需要绕过访问控制，也不会违反版权或网站条款。
           required: true

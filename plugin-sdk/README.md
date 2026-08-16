@@ -1,31 +1,44 @@
 # ReadDock Plugin SDK
 
-这里提供 ReadDock 外部数据源插件的协议示例、声明式包格式、受限脚本示例和离线合成 fixture。
+这里放的是外部数据源插件的协议示例和离线测试材料。
 
-## 示例文件
+如果你想为自己有权访问的数据源编写插件，可以先从示例 manifest 和合成 fixture 开始。主仓库不提供真实商业网站适配器，也不鼓励把真实站点页面或未授权内容复制进 fixture。
 
-- `manifest.example.json`：manifest 字段
-- `package.example.json`：CSS 选择器插件包
-- `package.javascript.example.json`：受限 JavaScript 插件包
-- `repository.example.json`：签名仓库索引结构
-- `source.example.ts`：开发者侧 API 参考
-- `fixtures/example-source`：项目自有合成内容的离线测试包
+## 目录里有什么
 
-## 运行离线测试
+- manifest.example.json：manifest 字段示例；
+- package.example.json：CSS 选择器插件包示例；
+- package.javascript.example.json：受限 JavaScript 插件包示例；
+- repository.example.json：签名仓库索引示例；
+- source.example.ts：开发者侧 API 参考；
+- fixtures/example-source：项目自有合成内容的离线测试包。
 
-```text
+## 运行示例
+
+从工程根目录运行：
+
+~~~text
 gradle :plugin-cli:run --args="validate ../plugin-sdk/fixtures/example-source"
 gradle :plugin-cli:run --args="test ../plugin-sdk/fixtures/example-source"
-```
+~~~
 
-测试只读取本地快照，不访问网络。fixture 中的标题、作者和页面是合成内容，不代表 ReadDock 已接入真实商业网站。
+这些命令只读取本地快照，不访问网络。fixture 里的标题、作者和页面都是合成内容，不代表 ReadDock 已经接入任何真实商业网站。
 
 ## 安全边界
 
-manifest 必须声明 HTTPS 基地址、允许域名、能力、权限、速率和并发限制。运行时会拒绝未声明域名、未签名或签名不可信的包。脚本只能使用有限的 HTML 解析和网关请求能力，不接触 Android API、文件系统或任意系统能力。
+插件 manifest 必须声明 HTTPS 基地址、允许域名、能力、权限、速率和并发限制。运行时会拒绝未声明的域名、未签名的包或签名不可信的包。
 
-需要登录或人工操作的外部数据源可设置 `requiresUserInteraction: true`。这不会授权插件绕过验证码、付费墙、访问控制或反爬机制；用户必须自行完成合法操作，插件作者必须遵守目标网站条款、版权和许可要求。
+受限脚本只能做有限的 HTML 解析、URL 编码和网关请求，不能访问 Android API、任意文件或系统能力。
 
-## 发布建议
+需要登录或人工操作的外部数据源可以设置 requiresUserInteraction: true。这只表示用户需要在允许的流程中自己完成操作，不代表插件可以绕过验证码、付费墙、访问控制或反爬机制。
 
-使用 `readdock-source` 完成初始化、校验、fixture 测试、签名打包和 RSA 公钥生成。开发密钥与发布密钥分离，私钥只保存在本机安全位置，不要提交到 Git。
+## 发布插件前
+
+请确认：
+
+1. 数据来源和内容有明确授权；
+2. manifest 的 HTTPS、域名、权限、速率和 API 版本合理；
+3. 已运行 validate 和离线 test；
+4. 使用发布密钥签名插件包，并把私钥留在安全位置；
+5. 记录许可证、来源和变更；
+6. 在独立仓库发布真实数据源插件。

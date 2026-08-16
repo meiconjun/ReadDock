@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in ReadDock
+description: 报告一个可以在 ReadDock 中复现的问题
 title: "[Bug] "
 labels: ["bug"]
 body:
@@ -10,20 +10,20 @@ body:
   - type: input
     id: version
     attributes:
-      label: ReadDock version
+      label: ReadDock 版本
       placeholder: 0.5.0-beta01
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Reproduction steps
-      description: 请提供最小、可复现的步骤。
+      label: 如何复现
+      description: 请写出别人可以照着操作的最小步骤。
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected and actual behavior
+      label: 实际表现和预期表现
     validations:
       required: true
