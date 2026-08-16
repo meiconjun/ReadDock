@@ -1,24 +1,29 @@
-# 品牌命名检查
+# 名称记录
 
-ReadDock 已由项目维护者确定为最终工作品牌。本文件记录有限公开搜索结果，不代替商标、域名、应用商店或完整 GitHub 名称清查，因此不对名称宣称唯一或已注册。
+ReadDock 是项目维护者最终确定的项目名称。
 
-| 候选 | 公开搜索观察 | 本轮结论 |
+这份记录只说明我们做过哪些有限的公开搜索，不是商标、域名、应用商店或 GitHub 的完整清查。因此，我们不会把 ReadDock 宣称为“全球唯一”或“已经注册”。
+
+| 名称 | 公开搜索观察 | 结论 |
 | --- | --- | --- |
-| PageLoom | 已发现相关公开产品活动。 | 不再采用 |
-| PanelHarbor | 本轮有限搜索未确认同名仓库。 | 未清权 |
-| InkNest | 已发现同名 GitHub 项目。 | 不采用 |
-| FrameLoom | 已发现同名公开项目。 | 不采用 |
-| StoryWeave | 已发现同名 GitHub 项目。 | 不采用 |
-| ReadDock | 本轮有限搜索未完成完整清查。 | 用户已确定采用，不宣称唯一 |
-| InkAtlas | 已发现相关 GitHub 工具内容。 | 未清权 |
-| PanelTrail | 本轮有限搜索未确认同名仓库。 | 未清权 |
+| PageLoom | 发现相关公开产品活动。 | 不采用 |
+| PanelHarbor | 本次有限搜索没有确认同名仓库。 | 未清权 |
+| InkNest | 发现同名 GitHub 项目。 | 不采用 |
+| FrameLoom | 发现同名公开项目。 | 不采用 |
+| StoryWeave | 发现同名 GitHub 项目。 | 不采用 |
+| ReadDock | 尚未完成完整清查。 | 已确定采用，但不宣称唯一 |
+| InkAtlas | 发现相关 GitHub 工具内容。 | 未清权 |
+| PanelTrail | 本次有限搜索没有确认同名仓库。 | 未清权 |
 
-## 当前统一命名
+## 工程中的命名
 
-- Android label、README、Gradle root project、主要 UI 类和 CLI 使用 `ReadDock` / `readdock-source`。
-- Android `applicationId` 和 app namespace 使用 `com.readdock.app`；源码包名统一为 `com.readdock.*`。
-- 数据库类为 `ReadDockDatabase`，数据库文件名为 `readdock.db`。
-- 外部插件示例和测试标识使用 `com.readdock.*`，不包含旧品牌或真实商业站点标识。
-- 旧品牌只在保留的历史迭代记录和 Git 历史中作为历史信息存在，不作为当前产品名称。
+当前对外名称和 Android 身份已经统一：
 
-GitHub 仓库所有者、仓库 URL、商标和域名仍需单独确认。
+- Android label、README、Gradle 项目名和主要 UI 类：ReadDock；
+- 插件 CLI：readdock-source；
+- applicationId 和 app namespace：com.readdock.app；
+- 源码包名：com.readdock.*；
+- 数据库类和文件：ReadDockDatabase / readdock.db；
+- GitHub 仓库：[meiconjun/ReadDock](https://github.com/meiconjun/ReadDock)。
+
+旧品牌只在历史迭代记录和 Git 历史中作为历史信息存在。商标和域名仍需要项目维护者另行确认。

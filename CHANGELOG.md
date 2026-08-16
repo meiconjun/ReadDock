@@ -1,23 +1,24 @@
-# Changelog
+# 变更记录
 
 ## 0.5.0-beta01 — 2026-08-16
 
-### Added
+这是 ReadDock 的第一个公开 Beta。这个版本的重点是把本地阅读、插件边界和公开仓库基础设施整理到一个可以继续维护的起点。
 
-- ReadDock Beta 公开发布文档、贡献规范、安全策略和 CI。
-- EPUB、MOBI、PDF、CBZ/ZIP 和图片本地阅读路径的公开说明。
-- release APK 公开面检查和本地 release signing 配置模板。
-- 外部数据源插件的正式安装、仓库、签名和授权边界说明。
+### 做了什么
 
-### Changed
+- 支持 EPUB、MOBI、PDF、CBZ/ZIP 和图片文件的本地阅读；
+- 增加书架、阅读历史、阅读进度和图片缓存；
+- 完成图片缩放、拖拽、横向翻页、纵向阅读和超大图片保护；
+- 提供外部数据源插件协议、签名、权限、域名和仓库校验；
+- 提供 readdock-source 插件 CLI 和离线合成 fixture；
+- 补齐 README、贡献指南、行为准则、安全策略、CI 和 GitHub 模板；
+- 从正式 App 和 release APK 中移除真实商业网站适配器及测试源。
 
-- 公开品牌、Android applicationId、namespace、源码包名和 CLI 统一为 ReadDock。
-- 正式 source registry 不再注册内置合成 source。
-- 移除 MYCOMIC 真实适配器、真实站点会话实现和对应 UI；真实授权源需由外部插件提供。
-- 测试数据只保留在测试和 fixture 路径。
+### 这个版本还不完善的地方
 
-### Known limitations
+- ReadDock 不内置真实商业网站数据源；
+- 在线内容需要用户自己安装合规的外部插件；
+- 大文件、特殊 MOBI 变体和不同站点的兼容性还需要更多测试；
+- 正式发布需要维护者安全保存 release keystore，并在 CI 中使用加密 secrets。
 
-- Beta 不内置真实商业网站数据源。
-- Release signing 需要用户在本地配置；仓库不包含密钥。
-- 外部插件的授权、版权和目标网站条款责任由插件作者和用户承担。
+外部插件的授权、版权、隐私和目标网站条款责任由插件作者与使用者承担。
