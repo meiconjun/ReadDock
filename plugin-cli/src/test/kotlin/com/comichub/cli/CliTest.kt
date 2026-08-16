@@ -16,7 +16,7 @@ class CliTest {
         assertEquals(0, Cli.run(listOf("validate", root.resolve("fixture-source").path), output, errors))
         assertEquals(0, Cli.run(listOf("test", root.resolve("fixture-source").path), output, errors))
         assertTrue(output.toString().contains("fixture 通过"), output.toString())
-        assertTrue(output.toString().contains("authorization=local synthetic fixture"), output.toString())
+        assertTrue(output.toString().contains("authorization=project-owned synthetic fixture"), output.toString())
         assertEquals("", errors.toString())
     }
 

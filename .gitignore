@@ -7,6 +7,11 @@
 .idea/
 *.iml
 local.properties
+keystore.properties
+signing-keys/
+secrets/
+.env
+.env.*
 
 # Generated APKs and signing material
 *.apk
@@ -16,6 +21,9 @@ local.properties
 *.pem
 *.key
 *.p12
+*.pfx
+*.cookie
+*.session
 
 # Local emulator captures and temporary files
 *.hprof

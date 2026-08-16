@@ -5,11 +5,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class MockSourceTest {
-    private val source = MockSource()
+class SyntheticSourceTest {
+    private val source = SyntheticSource()
 
     @Test
-    fun `blank search returns catalog`() = runBlocking {
+    fun `blank search returns synthetic catalog`() = runBlocking {
         val results = source.search("")
 
         assertEquals(3, results.size)
@@ -17,14 +17,14 @@ class MockSourceTest {
     }
 
     @Test
-    fun `search filters by title and tag`() = runBlocking {
+    fun `search filters synthetic title and tag`() = runBlocking {
         val results = source.search("治愈")
 
         assertEquals(listOf("雨巷茶馆"), results.map { it.title })
     }
 
     @Test
-    fun `detail and pages form a reading flow`() = runBlocking {
+    fun `detail and pages form an offline reading flow`() = runBlocking {
         val detail = source.detail("sky-courier")
         val pages = source.pages(detail.chapters.first().id)
 

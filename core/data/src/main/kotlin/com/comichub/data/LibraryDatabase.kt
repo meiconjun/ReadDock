@@ -16,14 +16,14 @@ import androidx.room.RoomDatabase
     version = 2,
     exportSchema = false
 )
-abstract class ComicHubDatabase : RoomDatabase() {
+abstract class PageLoomDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
 
     companion object {
-        fun create(context: Context): ComicHubDatabase =
+        fun create(context: Context): PageLoomDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
-                ComicHubDatabase::class.java,
+                PageLoomDatabase::class.java,
                 "comichub.db"
             ).addMigrations(MIGRATION_1_2).build()
 

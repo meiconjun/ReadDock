@@ -1,7 +1,7 @@
 {
   "manifest": {
-    "id": "com.comichub.fixture",
-    "name": "ComicHub Fixture Source",
+    "id": "com.pageloom.fixture",
+    "name": "PageLoom Synthetic Fixture",
     "version": "0.1.0",
     "apiVersion": 1,
     "baseUrl": "https://fixture.example",

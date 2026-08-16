@@ -110,7 +110,7 @@ class RoomLibraryRepository(
 ) : LibraryRepository {
     companion object {
         fun create(context: android.content.Context): RoomLibraryRepository =
-            RoomLibraryRepository(ComicHubDatabase.create(context).libraryDao())
+            RoomLibraryRepository(PageLoomDatabase.create(context).libraryDao())
     }
 
     override fun observeLibrary(): Flow<List<LibraryComic>> = dao.observeLibrary().map { comics ->
@@ -200,7 +200,7 @@ class RoomLocalComicRepository(
 ) : LocalComicRepository {
     companion object {
         fun create(context: android.content.Context): RoomLocalComicRepository =
-            RoomLocalComicRepository(ComicHubDatabase.create(context).libraryDao())
+            RoomLocalComicRepository(PageLoomDatabase.create(context).libraryDao())
     }
 
     override fun observeLocalComics(): Flow<List<LocalComic>> =

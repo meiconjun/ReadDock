@@ -10,6 +10,7 @@ kotlin {
 
 application {
     mainClass.set("com.comichub.cli.MainKt")
+    applicationName = "pageloom-source"
 }
 
 dependencies {

@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible problem in PageLoom
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请不要提交账号、Cookie、私钥、个人文件或未授权漫画内容。
+  - type: input
+    id: version
+    attributes:
+      label: PageLoom version
+      placeholder: 0.5.0-beta01
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: 请提供最小、可复现的步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true

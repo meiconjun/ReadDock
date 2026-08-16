@@ -16,7 +16,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ComicHub"
+rootProject.name = "PageLoom"
 include(":app")
 include(":core:source-api")
 include(":core:source-runtime")

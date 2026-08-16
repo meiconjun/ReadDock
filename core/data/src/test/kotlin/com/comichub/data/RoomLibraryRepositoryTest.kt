@@ -19,14 +19,14 @@ import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 class RoomLibraryRepositoryTest {
-    private lateinit var database: ComicHubDatabase
+    private lateinit var database: PageLoomDatabase
     private lateinit var repository: RoomLibraryRepository
 
     @Before
     fun setUp() {
         database = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext<Context>(),
-            ComicHubDatabase::class.java
+            PageLoomDatabase::class.java
         ).allowMainThreadQueries().build()
         repository = RoomLibraryRepository(database.libraryDao())
     }

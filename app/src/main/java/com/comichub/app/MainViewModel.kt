@@ -31,9 +31,6 @@ import com.comichub.source.api.SourceManifest
 import com.comichub.source.runtime.GatewayResult
 import com.comichub.source.runtime.InstalledPluginInfo
 import com.comichub.source.runtime.LocalPluginStore
-import com.comichub.source.runtime.MockSource
-import com.comichub.source.runtime.MyComicChallengeException
-import com.comichub.source.runtime.MyComicSource
 import com.comichub.source.runtime.NetworkGateway
 import com.comichub.source.runtime.NetworkRequest
 import com.comichub.source.runtime.NetworkRequestPolicy
@@ -63,14 +60,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.URI
 
 enum class AppScreen {
     SEARCH,
     DETAIL,
     READER,
     LOCAL_READER,
-    WEB_READER,
     LIBRARY,
     SOURCES
 }
@@ -99,26 +94,12 @@ private fun failureMessage(text: String) = UiMessage(text, MessageTone.ERROR)
 class MainViewModel(
     private val appContext: Context,
     private val library: LibraryRepository = RoomLibraryRepository.create(appContext),
-    myComicSourceOverride: ComicSource? = null,
+    sourceOverride: ComicSource? = null,
     private val imageFetcher: (suspend (String) -> ByteArray)? = null,
     private val localComicRepository: LocalComicRepository = RoomLocalComicRepository.create(appContext)
 ) : ViewModel() {
-    private sealed interface PendingWebAction {
-        data class Search(val query: String, val page: Int, val append: Boolean) : PendingWebAction
-        data class OpenComic(val comic: ComicSummary) : PendingWebAction
-        data class OpenChapter(val chapter: Chapter) : PendingWebAction
-    }
-
-    private val builtinSource = MockSource()
-    private val myComicWebSession = if (myComicSourceOverride == null) {
-        MyComicWebSession(appContext)
-    } else {
-        null
-    }
-    private val myComicSource = myComicSourceOverride ?: MyComicSource { url ->
-        myComicWebSession!!.fetchHtml(url)
-    }
-    private val registry = SourceRegistry.default()
+    private val injectedSource = sourceOverride
+    private val registry = SourceRegistry(listOfNotNull(injectedSource))
     private val repositoryPreferences = appContext.getSharedPreferences(
         "plugin_repository",
         Context.MODE_PRIVATE
@@ -206,8 +187,6 @@ class MainViewModel(
         private set
     var selectedChapter by mutableStateOf<Chapter?>(null)
         private set
-    var webReaderUrl by mutableStateOf<String?>(null)
-        private set
     var pages by mutableStateOf<List<ComicPage>>(emptyList())
         private set
     private var readerRetryVersions by mutableStateOf<Map<String, Int>>(emptyMap())
@@ -230,13 +209,9 @@ class MainViewModel(
     var isSaving by mutableStateOf(false)
         private set
     private var savedOverride by mutableStateOf<Pair<String, Boolean>?>(null)
-    private var pendingWebAction by mutableStateOf<PendingWebAction?>(null)
 
     val canGoBack: Boolean
         get() = backStack.size > 1
-
-    val canRetryWebAction: Boolean
-        get() = pendingWebAction != null
 
     init {
         viewModelScope.launch {
@@ -245,7 +220,7 @@ class MainViewModel(
                 performSearch("", page = 1, append = false)
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                errorMessage = error.message ?: "漫画源初始化失败"
+                errorMessage = "数据源初始化失败，请稍后重试"
             } finally {
                 isLoading = false
             }
@@ -300,23 +275,15 @@ class MainViewModel(
                 try {
                     library.saveComic(detail)
                 } catch (storageError: Throwable) {
-                    errorMessage = "漫画信息保存失败：${storageError.message ?: "未知错误"}"
+                    errorMessage = "漫画信息保存失败，请稍后重试"
                 }
                 navigateTo(AppScreen.DETAIL)
-                pendingWebAction = null
                 detail.summary.coverUrl?.let { coverUrl ->
                     viewModelScope.launch { loadCover(coverUrl) }
                 }
             } catch (sourceError: Throwable) {
                 if (sourceError is CancellationException) throw sourceError
-                if (sourceError is MyComicChallengeException) {
-                    webReaderUrl = sourceError.url
-                    pendingWebAction = PendingWebAction.OpenComic(comic)
-                    navigateTo(AppScreen.WEB_READER)
-                    actionMessage = infoMessage("请在网页会话中完成验证，然后点击“验证完成，重试”")
-                } else {
-                    errorMessage = "打开漫画失败：${sourceError.message ?: "未知错误"}"
-                }
+                errorMessage = "打开漫画失败，请检查数据源配置后重试"
             }
             isLoading = false
         }
@@ -351,7 +318,7 @@ class MainViewModel(
                     library.saveComic(detail)
                     library.recordChapterOpened(detail.summary, chapter, loadedPages.size)
                 } catch (storageError: Throwable) {
-                    errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                    errorMessage = "阅读进度保存失败，请稍后重试"
                     null
                 }
                 if (generation != readerGeneration) return@launch
@@ -361,18 +328,13 @@ class MainViewModel(
                 if (loadedPages.isEmpty()) {
                     errorMessage = "本章节没有可显示的图片"
                 }
-                pendingWebAction = null
             } catch (sourceError: Throwable) {
                 if (sourceError is CancellationException) throw sourceError
                 if (generation != readerGeneration) return@launch
-                if (sourceError is MyComicChallengeException) {
-                    selectedChapter = chapter
-                    webReaderUrl = sourceError.url
-                    pendingWebAction = PendingWebAction.OpenChapter(chapter)
-                    navigateTo(AppScreen.WEB_READER)
-                    actionMessage = infoMessage("请在网页会话中完成验证，然后点击“验证完成，重试”")
+                errorMessage = if (sourceError.message == "章节不属于当前漫画，无法打开") {
+                    "章节不属于当前漫画，无法打开"
                 } else {
-                    errorMessage = "打开章节失败：${sourceError.message ?: "未知错误"}"
+                    "打开章节失败，请检查数据源配置后重试"
                 }
             }
             if (generation == readerGeneration) isLoading = false
@@ -395,7 +357,7 @@ class MainViewModel(
                 actionMessage = infoMessage(if (saved) "已取消收藏" else "已收藏")
             } catch (storageError: Throwable) {
                 savedOverride = null
-                errorMessage = "书架保存失败：${storageError.message ?: "未知错误"}"
+                errorMessage = "书架保存失败，请稍后重试"
                 actionMessage = failureMessage("收藏操作失败，请重试")
             } finally {
                 isSaving = false
@@ -423,25 +385,8 @@ class MainViewModel(
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (selectedDetail?.summary?.coverUrl == url) {
-                actionMessage = failureMessage("封面加载失败：${error.message ?: "网络错误"}")
+                actionMessage = failureMessage("封面加载失败，请检查网络后重试")
             }
-        }
-    }
-
-    fun retryPendingWebAction() {
-        val action = pendingWebAction ?: return
-        if (screen == AppScreen.WEB_READER) popScreen()
-        when (action) {
-            is PendingWebAction.Search -> {
-                query = action.query
-                searchPage = action.page
-                searchJob?.cancel()
-                searchJob = viewModelScope.launch {
-                    performSearch(action.query, action.page, action.append)
-                }
-            }
-            is PendingWebAction.OpenComic -> openComic(action.comic)
-            is PendingWebAction.OpenChapter -> openChapter(action.chapter)
         }
     }
 
@@ -500,7 +445,7 @@ class MainViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                val message = "导入失败：${error.message ?: "未知错误"}"
+                val message = "导入失败，请确认文件可读且格式受支持"
                 localImportState = LocalImportUiState(LocalImportStatus.ERROR, message)
                 actionMessage = failureMessage(message)
             }
@@ -540,7 +485,7 @@ class MainViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                val message = "导入失败：${error.message ?: "未知错误"}"
+                val message = "导入失败，请确认文件夹可读且包含受支持的文件"
                 localImportState = LocalImportUiState(LocalImportStatus.ERROR, message)
                 actionMessage = failureMessage(message)
             }
@@ -566,7 +511,7 @@ class MainViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                actionMessage = failureMessage("删除失败：${error.message ?: "未知错误"}")
+                actionMessage = failureMessage("删除失败，请稍后重试")
             }
         }
     }
@@ -592,7 +537,7 @@ class MainViewModel(
             } catch (storageError: Throwable) {
                 if (storageError is CancellationException) throw storageError
                 if (generation == readerGeneration && selectedChapter?.id == chapter.id) {
-                    errorMessage = "阅读进度保存失败：${storageError.message ?: "未知错误"}"
+                    errorMessage = "阅读进度保存失败，请稍后重试"
                 }
             }
         }
@@ -600,9 +545,8 @@ class MainViewModel(
 
     /**
      * Reader navigation is based on chapter number, not the order returned by
-     * the site. MYCOMIC lists newest chapters first, while the local source
-     * lists them oldest first; using list indexes made “下一章” stop at 第 1
-     * 话 or move in the opposite direction depending on the source.
+     * a plugin. This keeps next/previous navigation stable when a source
+     * returns newest chapters first.
      */
     fun previousChapter(): Chapter? = adjacentChapter(offset = -1)
 
@@ -772,12 +716,11 @@ class MainViewModel(
         if (backStack.size <= 1) return
         navigationJob?.cancel()
         navigationJob = null
-        if (screen == AppScreen.READER || screen == AppScreen.WEB_READER) {
+        if (screen == AppScreen.READER) {
             invalidateReaderSession()
         }
         isLoading = false
         popScreen()
-        pendingWebAction = null
         if (screen != AppScreen.LOCAL_READER) selectedLocalComicId = null
     }
 
@@ -823,7 +766,7 @@ class MainViewModel(
         val report = pluginStore.loadEnabled { manifest, url ->
             fetchHtml(manifest, url)
         }
-        registry.replace(listOf(builtinSource, myComicSource) + report.sources)
+        registry.replace(listOfNotNull(injectedSource) + report.sources)
         if (report.failures.isNotEmpty()) {
             pluginMessage = failureMessage("插件加载失败：${report.failures.keys.joinToString("、")}")
         }
@@ -835,15 +778,11 @@ class MainViewModel(
         actionMessage = null
         val found = mutableListOf<ComicSummary>()
         val failures = mutableListOf<String>()
-        var challengeUrl: String? = null
         registry.sources.forEach { source ->
             try {
                 found += source.search(value, page)
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                if (error is MyComicChallengeException && challengeUrl == null) {
-                    challengeUrl = error.url
-                }
                 failures += source.manifest.name
             }
         }
@@ -860,14 +799,6 @@ class MainViewModel(
             } else {
                 "部分漫画源暂时不可用：${failures.joinToString("、")}"
             }
-        }
-        if (challengeUrl != null && found.isEmpty()) {
-            webReaderUrl = challengeUrl
-            pendingWebAction = PendingWebAction.Search(value, page, append)
-            navigateTo(AppScreen.WEB_READER)
-            actionMessage = infoMessage("请在网页会话中完成验证，然后点击“验证完成，重试”")
-        } else {
-            pendingWebAction = null
         }
         isLoading = false
     }
@@ -887,31 +818,12 @@ class MainViewModel(
     }
 
     private suspend fun fetchImage(url: String): ByteArray {
-        val isMyComicAsset = runCatching {
-            URI(url).host?.lowercase()?.let { host ->
-                host == "biccam.com" || host.endsWith(".biccam.com")
-            } == true
-        }.getOrDefault(false)
-        val request = if (isMyComicAsset && myComicWebSession != null) {
-            NetworkRequest(
-                url = url,
-                headers = myComicWebSession.imageRequestHeaders(
-                    url = url,
-                    referer = selectedChapter?.id
-                        ?: selectedDetail?.summary?.id
-                        ?: MyComicSource.SITE_URL
-                ),
-                sourceId = MyComicSource.SOURCE_ID,
-                bodyMode = com.comichub.source.runtime.NetworkBodyMode.BINARY,
-                maxResponseBytes = MAX_IMAGE_RESPONSE_BYTES
-            )
-        } else {
-            NetworkRequest(
-                url = url,
-                bodyMode = com.comichub.source.runtime.NetworkBodyMode.BINARY,
-                maxResponseBytes = MAX_IMAGE_RESPONSE_BYTES
-            )
-        }
+        val request = NetworkRequest(
+            url = url,
+            sourceId = selectedChapter?.sourceId,
+            bodyMode = com.comichub.source.runtime.NetworkBodyMode.BINARY,
+            maxResponseBytes = MAX_IMAGE_RESPONSE_BYTES
+        )
         return when (
             val result = gateway.get(
                 request,
@@ -954,7 +866,6 @@ class MainViewModel(
     ): List<PluginUpdate> = PluginRepositoryIndexLoader().updates(index, pluginStore.list())
 
     override fun onCleared() {
-        myComicWebSession?.destroy()
         invalidateReaderSession()
         super.onCleared()
     }

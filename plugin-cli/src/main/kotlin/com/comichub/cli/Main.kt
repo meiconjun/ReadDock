@@ -39,18 +39,18 @@ private val loaderJson = Json {
     explicitNulls = false
 }
 
-/** Small, offline-first developer CLI for ComicHub plugin packages. */
+/** Small, offline-first developer CLI for PageLoom plugin packages. */
 object Cli {
     private val usage = """
-ComicHub Plugin CLI
+PageLoom Plugin CLI
 
 Usage:
-  comic-source init <directory> [--id <plugin-id>] [--name <name>]
-  comic-source validate <package-or-directory> [--require-signature --public-key <pem> --key-id <id>]
-  comic-source test <package-or-directory> [--fixture-dir <directory>]
-  comic-source fixture capture <https-url-or-file> <output-file> [--force]
-  comic-source package <package-or-directory> <output-file> [--private-key <pem> --key-id <id>]
-  comic-source keygen <directory> [--force]
+  pageloom-source init <directory> [--id <plugin-id>] [--name <name>]
+  pageloom-source validate <package-or-directory> [--require-signature --public-key <pem> --key-id <id>]
+  pageloom-source test <package-or-directory> [--fixture-dir <directory>]
+  pageloom-source fixture capture <https-url-or-file> <output-file> [--force]
+  pageloom-source package <package-or-directory> <output-file> [--private-key <pem> --key-id <id>]
+  pageloom-source keygen <directory> [--force]
 """.trimIndent()
 
     fun run(args: List<String>, out: Appendable, err: Appendable): Int {
@@ -486,7 +486,7 @@ Create a distributable package with `comic-source package . dist/$id.json`.
 
     private const val fixtureMetadata = """
         {
-          "contentAuthorization": "local synthetic fixture owned by the ComicHub project",
+          "contentAuthorization": "project-owned synthetic fixture for offline CI",
           "expected": {
             "searchResults": 1,
             "title": "星海信使",

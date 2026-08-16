@@ -25,6 +25,10 @@ class SourceRegistry(sources: List<ComicSource>) {
         sourcesById[sourceId] ?: error("找不到漫画源：$sourceId")
 
     companion object {
-        fun default(): SourceRegistry = SourceRegistry(listOf(MockSource()))
+        /**
+         * Production starts with no bundled content source. Sources are added
+         * only by a trusted external plugin or by an injected test fixture.
+         */
+        fun default(): SourceRegistry = SourceRegistry(emptyList())
     }
 }

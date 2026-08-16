@@ -11,7 +11,6 @@ import com.comichub.data.ReadingProgress
 import com.comichub.source.api.Chapter
 import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicSummary
-import com.comichub.source.runtime.MyComicSource
 import com.comichub.app.local.LocalReaderStatus
 import com.comichub.app.local.LocalReaderViewModel
 import kotlinx.coroutines.Dispatchers
@@ -52,36 +51,7 @@ class MainViewModelTest {
     private fun createViewModel(imageFetchCount: AtomicInteger? = null): MainViewModel = MainViewModel(
         context,
         repository,
-        MyComicSource { url ->
-            when {
-                url == "https://mycomic.com/cn/comics?page=1" -> """
-                    <a href="/cn/comics/1769">
-                      <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
-                    </a>
-                """.trimIndent()
-                url == "https://mycomic.com/cn/comics?q=%E4%B8%8D%E5%AD%98%E5%9C%A8&page=1" -> """
-                    <html><head><title>MYCOMIC 搜索</title></head>
-                    <body><main><p>没有结果</p></main></body></html>
-                """.trimIndent()
-                url == MyComicSource.COMIC_URL -> """
-                    <html><head><title>烙印战士 - MYCOMIC</title></head><body>
-                      <img src="https://biccam.com/comics/1769-cover.jpg" alt="烙印战士">
-                      <div class="mt-8 mb-12">
-                        <div x-data="{ chapters: true }">
-                          <a href="/cn/chapters/15444">第01卷</a>
-                        </div>
-                      </div>
-                    </body></html>
-                """.trimIndent()
-                url == MyComicSource.FIRST_CHAPTER_URL -> """
-                    <html><body>
-                      <img class="page" src="https://biccam.com/chapters/15444/1.jpg">
-                      <img class="page" src="https://biccam.com/chapters/15444/2.jpg">
-                    </body></html>
-                """.trimIndent()
-                else -> error("missing MYCOMIC test fixture: $url")
-            }
-        },
+        SyntheticComicSource(),
         imageFetcher = {
             imageFetchCount?.incrementAndGet()
             byteArrayOf(1, 2, 3)
@@ -101,7 +71,7 @@ class MainViewModelTest {
 
         val comic = ComicSummary(
             id = "sky-courier",
-            sourceId = "com.comichub.mock",
+            sourceId = SyntheticComicSource.SOURCE_ID,
             title = "星海信使"
         )
         viewModel.openComic(comic)
@@ -126,19 +96,19 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `mycomic chapter uses the browser session for data and app reader for images`() = runTest {
+    fun `synthetic chapter opens in the app reader without network`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
 
-        val comic = viewModel.results.single { it.sourceId == MyComicSource.SOURCE_ID }
+        val comic = viewModel.results.first { it.id == "sky-courier" }
         viewModel.openComic(comic)
         advanceUntilIdle()
-        viewModel.openChapter(viewModel.selectedDetail!!.chapters.single())
+        viewModel.openChapter(viewModel.selectedDetail!!.chapters.first())
         advanceUntilIdle()
 
         assertEquals(AppScreen.READER, viewModel.screen, viewModel.errorMessage)
-        assertEquals(MyComicSource.FIRST_CHAPTER_URL, viewModel.selectedChapter?.id)
-        assertEquals(2, viewModel.pages.size)
+        assertEquals(SyntheticComicSource.FIRST_CHAPTER_ID, viewModel.selectedChapter?.id)
+        assertEquals(6, viewModel.pages.size)
     }
 
     @Test
@@ -146,7 +116,7 @@ class MainViewModelTest {
         val fetchCount = AtomicInteger(0)
         val viewModel = createViewModel(fetchCount)
         advanceUntilIdle()
-        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
         viewModel.openComic(comic)
         advanceUntilIdle()
         viewModel.openChapter(viewModel.selectedDetail!!.chapters.first())
@@ -161,7 +131,7 @@ class MainViewModelTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
 
-        viewModel.openComic(viewModel.results.first { it.sourceId == "com.comichub.mock" })
+        viewModel.openComic(viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID })
         advanceUntilIdle()
         assertEquals(AppScreen.DETAIL, viewModel.screen)
 
@@ -174,7 +144,7 @@ class MainViewModelTest {
     fun `favorite is observable, persistent and removable from the library`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
-        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
 
         viewModel.openComic(comic)
         advanceUntilIdle()
@@ -203,7 +173,7 @@ class MainViewModelTest {
     fun `back stack returns reader to detail and rejects a foreign chapter`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
-        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
         viewModel.openComic(comic)
         advanceUntilIdle()
         val detail = viewModel.selectedDetail!!
@@ -244,7 +214,7 @@ class MainViewModelTest {
     fun `favorite storage failure gives visible feedback and rolls back optimistic state`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()
-        val comic = viewModel.results.first { it.sourceId == "com.comichub.mock" }
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
         viewModel.openComic(comic)
         advanceUntilIdle()
         repository.failWrites = true
@@ -270,7 +240,7 @@ class MainViewModelTest {
         viewModel.openComic(
             ComicSummary(
                 id = "missing",
-                sourceId = "com.comichub.mock",
+                sourceId = SyntheticComicSource.SOURCE_ID,
                 title = "不存在的详情"
             )
         )

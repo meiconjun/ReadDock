@@ -115,7 +115,7 @@ class LocalReaderViewModel(
         } catch (error: Throwable) {
             state = LocalReaderState(
                 status = LocalReaderStatus.ERROR,
-                errorMessage = error.message ?: "本地漫画打开失败"
+                errorMessage = "本地漫画打开失败，请返回书架后重新导入"
             )
         }
     }
@@ -152,7 +152,7 @@ class LocalReaderViewModel(
                 state = state.copy(
                     content = null,
                     isPageLoading = false,
-                    pageErrorMessage = "第 ${pageNumber} 页加载失败：${error.message ?: "文件损坏或不可读"}"
+                    pageErrorMessage = "第 ${pageNumber} 页加载失败，请检查文件后重试"
                 )
             }
         }
@@ -177,7 +177,7 @@ class LocalReaderViewModel(
             } catch (error: Throwable) {
                 if (state.comic?.id == book.id && state.currentPage == pageNumber) {
                     state = state.copy(
-                        progressErrorMessage = "阅读进度保存失败：${error.message ?: "未知错误"}"
+                        progressErrorMessage = "阅读进度保存失败，请稍后重试"
                     )
                 }
             }

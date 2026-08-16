@@ -1,13 +1,5 @@
 package com.comichub.app.ui
 
-import android.annotation.SuppressLint
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -73,7 +65,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import com.comichub.app.AppScreen
 import com.comichub.app.MainActivity
@@ -99,7 +90,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ComicHubApp() {
+fun PageLoomApp() {
     val context = LocalContext.current
     val activity = context as? MainActivity
     val viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(context))
@@ -154,8 +145,7 @@ fun ComicHubApp() {
                                     .firstOrNull { it.id == viewModel.selectedLocalComicId }
                                     ?.title
                                     ?: "本地阅读"
-                                AppScreen.WEB_READER -> viewModel.selectedChapter?.title ?: "网页阅读"
-                                else -> "ComicHub"
+                                else -> "PageLoom"
                             }
                         )
                     },
@@ -209,7 +199,6 @@ fun ComicHubApp() {
             AppScreen.LOCAL_READER -> viewModel.selectedLocalComicId?.let { id ->
                 LocalReaderScreen(comicId = id, padding = padding)
             } ?: ErrorNotice("没有选择本地漫画")
-            AppScreen.WEB_READER -> WebReaderScreen(viewModel, padding)
         }
     }
 }
@@ -225,9 +214,9 @@ private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("ComicHub", style = MaterialTheme.typography.headlineMedium)
+        Text("PageLoom", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "插件化漫画阅读器原型",
+            "可扩展的数据源漫画阅读器 · Beta",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -551,14 +540,14 @@ private fun SourcesScreen(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("漫画源插件", style = MaterialTheme.typography.headlineMedium)
+        Text("数据源插件", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "从本地导入声明式 JSON 插件",
+                    "导入受信任的插件包，扩展可用的数据源",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Button(onClick = { picker.launch(arrayOf("application/json", "text/plain")) }) {
-                Text("导入")
+                Text("导入插件")
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -566,7 +555,7 @@ private fun SourcesScreen(
             InlineMessage(it)
             Spacer(Modifier.height(8.dp))
         }
-        Text("远程插件仓库", style = MaterialTheme.typography.titleLarge)
+        Text("插件仓库", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = viewModel.repositoryUrl,
@@ -643,7 +632,7 @@ private fun SourcesScreen(
                             Text(
                                 "${health.host} · 成功率 ${health.successRatePercent}% · " +
                                     "请求 ${health.requestCount} · 最近 ${health.lastLatencyMs}ms" +
-                                    (health.lastFailureMessage?.let { " · $it" } ?: "")
+                                    if (health.lastFailureMessage != null) " · 最近请求失败" else ""
                             )
                         },
                         trailingContent = {
@@ -654,23 +643,11 @@ private fun SourcesScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("内置源", style = MaterialTheme.typography.titleLarge)
-        Card(modifier = Modifier.fillMaxWidth()) {
-            ListItem(
-                headlineContent = { Text("本地示例源") },
-                supportingContent = { Text("用于验证搜索和阅读流程") },
-                trailingContent = { Text("内置") }
-            )
-        }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            ListItem(
-                headlineContent = { Text("MYCOMIC（网页会话）") },
-                supportingContent = {
-                    Text("MYCOMIC 全站数据源；搜索、详情和章节均使用浏览器会话解析")
-                },
-                trailingContent = { Text("内置") }
-            )
-        }
+        Text("数据源说明", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "PageLoom Beta 不内置商业网站数据源。请只安装你有权使用、且符合目标网站条款和版权要求的插件。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(16.dp))
         Text("已安装插件", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
@@ -958,7 +935,7 @@ private fun OnlineReaderPage(
         } catch (error: Throwable) {
             value = OnlinePageUiState(
                 loading = false,
-                error = error.message ?: "图片加载失败"
+                error = "图片暂时无法显示，请重试"
             )
         }
     }
@@ -989,7 +966,7 @@ private fun OnlineReaderPage(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                "第 ${page.index} 页加载失败：${pageState.error}",
+                "第 ${page.index} 页加载失败，请检查网络后重试",
                 color = Color.LightGray
             )
             TextButton(
@@ -1057,149 +1034,6 @@ private fun ReaderControls(
         }
     }
 }
-
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
-    val context = LocalContext.current
-    val url = viewModel.webReaderUrl ?: return
-    var pageError by remember(url) { mutableStateOf<String?>(null) }
-    val webView = remember(url) {
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.userAgentString = WebSettings.getDefaultUserAgent(context)
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView,
-                    request: WebResourceRequest
-                ): Boolean = !isAllowedWebHost(request.url.host)
-
-                override fun onPageFinished(view: WebView, pageUrl: String) {
-                    super.onPageFinished(view, pageUrl)
-                    view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
-                    pageError = null
-                    CookieManager.getInstance().flush()
-                }
-
-                override fun onReceivedError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    error: WebResourceError
-                ) {
-                    super.onReceivedError(view, request, error)
-                    if (request.isForMainFrame) {
-                        pageError = "网页加载失败：${error.description}"
-                    }
-                }
-            }
-            webChromeClient = WebChromeClient()
-        }
-    }
-
-    DisposableEffect(webView) {
-        onDispose {
-            webView.stopLoading()
-            webView.destroy()
-        }
-    }
-    LaunchedEffect(url) {
-        if (webView.url != url) webView.loadUrl(url)
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-    ) {
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxSize()
-        )
-        Column(
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.TopCenter)
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                .padding(12.dp),
-            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-        ) {
-            Text(
-                "MYCOMIC 会话验证",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                "此页面仅用于完成站点会话验证；验证后会回到应用内图片阅读器。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            pageError?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error)
-            }
-            viewModel.actionMessage?.let { InlineMessage(it) }
-            if (viewModel.canRetryWebAction) {
-                Button(
-                    onClick = viewModel::retryPendingWebAction,
-                    enabled = !viewModel.isLoading
-                ) {
-                    Text(if (viewModel.isLoading) "正在重试…" else "验证完成，重试")
-                }
-            }
-        }
-    }
-}
-
-private fun isAllowedWebHost(host: String?): Boolean {
-    val normalized = host?.lowercase() ?: return false
-    return normalized == "mycomic.com" || normalized.endsWith(".mycomic.com") ||
-        normalized == "biccam.com" || normalized.endsWith(".biccam.com")
-}
-
-/**
- * Keep the WebView as the browser session for Cloudflare/cookie handling, but
- * turn a successfully loaded chapter into the reader's image-only surface.
- * Challenge/error pages have no `.page` images, so they remain visible for the
- * user to complete the required interaction.
- */
-private val PURE_IMAGE_READER_SCRIPT = """
-    (function() {
-        function render() {
-            const pages = Array.from(document.querySelectorAll('img.page'));
-            if (!pages.length) return 'no-pages';
-
-            const sources = pages.map(function(page) {
-                return page.currentSrc || page.getAttribute('src') ||
-                    page.getAttribute('data-src') || page.getAttribute('data-original');
-            }).filter(Boolean);
-
-            // Replacing the whole document removes the site's header, scripts,
-            // breadcrumb, pagination controls, footer, and any later re-render.
-            document.documentElement.innerHTML =
-                '<head><meta name="viewport" content="width=device-width, initial-scale=1">' +
-                '<style>html,body{margin:0;padding:0;background:#000;}body{' +
-                'display:flex;flex-direction:column;align-items:center;}img{' +
-                'display:block;width:100%;height:auto;max-width:100%;object-fit:contain;}' +
-                '</style></head><body></body>';
-            const body = document.body;
-            sources.forEach(function(source) {
-                const image = document.createElement('img');
-                image.src = source;
-                image.loading = 'eager';
-                body.appendChild(image);
-            });
-            return String(sources.length);
-        }
-
-        render();
-        // Some pages populate the image list just after load. These retries
-        // still run on the original page, but become no-ops after replacement.
-        setTimeout(render, 500);
-        setTimeout(render, 1500);
-    })();
-""".trimIndent()
 
 @Composable
 private fun ComicRow(comic: ComicSummary, onClick: () -> Unit) {

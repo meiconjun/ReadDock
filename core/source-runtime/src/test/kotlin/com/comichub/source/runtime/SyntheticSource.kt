@@ -5,19 +5,19 @@ import com.comichub.source.api.ComicDetail
 import com.comichub.source.api.ComicPage
 import com.comichub.source.api.ComicSource
 import com.comichub.source.api.ComicSummary
-import com.comichub.source.api.PluginPermission
 import com.comichub.source.api.RateLimit
 import com.comichub.source.api.SourceCapability
 import com.comichub.source.api.SourceManifest
 
-class MockSource : ComicSource {
+/** Offline-only content used by JVM tests. It is never part of the app artifact. */
+class SyntheticSource : ComicSource {
     override val manifest = SourceManifest(
-        id = "com.comichub.mock",
-        name = "本地示例源",
-        version = "0.1.0",
+        id = "com.pageloom.test.synthetic",
+        name = "Synthetic test source",
+        version = "1.0.0",
         apiVersion = 1,
-        baseUrl = "https://mock.local",
-        domains = listOf("mock.local"),
+        baseUrl = "https://synthetic.invalid",
+        domains = listOf("synthetic.invalid"),
         capabilities = setOf(
             SourceCapability.SEARCH,
             SourceCapability.DETAIL,
@@ -26,7 +26,7 @@ class MockSource : ComicSource {
         ),
         permissions = emptySet(),
         rateLimit = RateLimit(requestsPerMinute = 120, concurrency = 4),
-        license = "Internal fixture"
+        license = "Test-only synthetic content"
     )
 
     private val catalog = listOf(
@@ -81,21 +81,19 @@ class MockSource : ComicSource {
         }
         return ComicDetail(
             summary = summary,
-            author = "ComicHub 示例作者",
-            description = "这是用于验证漫画源插件协议的本地 Fixture，不会访问互联网。",
+            author = "合成测试作者",
+            description = "仅用于离线协议测试的合成内容。",
             chapters = chapters
         )
     }
 
-    override suspend fun pages(chapterId: String): List<ComicPage> {
-        val chapterTitle = chapterId.substringAfterLast('-')
-        return (1..6).map { index ->
+    override suspend fun pages(chapterId: String): List<ComicPage> =
+        (1..6).map { index ->
             ComicPage(
                 id = "$chapterId-page-$index",
                 chapterId = chapterId,
                 index = index,
-                displayText = "示例页面 $index\n章节编号：$chapterTitle\n\n这里将来显示漫画图片。"
+                displayText = "合成测试页面 $index"
             )
         }
-    }
 }

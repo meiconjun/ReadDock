@@ -616,3 +616,31 @@ gradle :app:assembleDebug
 ```
 
 如果新终端没有继承环境变量，使用 Android Studio 打开项目并执行 Gradle Sync 即可。
+
+### Iteration 18：PageLoom 正式 Beta 公开发布整理
+
+状态：已完成
+
+时间：2026-08-16
+
+目标：在保留现有提交历史和应用升级兼容边界的前提下，将工程整理为可公开发布的 Android Beta 项目。
+
+本次决策记录：
+
+- 暂用 `PageLoom` 作为产品品牌和公开项目工作名称；GitHub 名称查重仅作为可用性参考，不宣称名称唯一。
+- `applicationId` 和现有 `com.comichub.*` 包名暂不变，避免未经确认地影响已安装应用、Room 数据库、签名和升级兼容性；品牌名称变更与 applicationId 变更分开处理。
+- 从正式 App source registry 和生产 APK 路径移除 MYCOMIC 真实适配器、真实站点会话逻辑及其用户界面；通用插件 API、权限模型和用户交互协议继续保留，真实授权源需由外部插件提供。
+- 本地合成数据仅保留在 `plugin-sdk/fixtures`、测试代码和 CI 校验路径；正式 Beta 不注册、不展示 fixture source。
+- Beta 版本目标为 `0.5.0-beta01`，发布检查覆盖敏感字符串、真实源残留、fixture 泄漏、调试文案和 APK 哈希。
+
+完成结果：
+
+- 品牌：采用 `PageLoom` 作为工作名称；`InkNest`、`FrameLoom`、`StoryWeave` 已发现公开同名项目，不建议直接采用；其他候选和 PageLoom 均未完成商标/域名/完整 GitHub 查重，最终名称仍待确认。
+- 兼容性：Android label、README、Gradle root project、主要 UI 类和 CLI 已统一为 PageLoom；`applicationId`、namespace、`com.comichub.*` 包名和 `comichub.db` 文件名保留，待单独评估迁移。
+- MYCOMIC：删除主仓库中的真实适配器、真实站点会话/WebView 实现、站点选择器、CDN 地址、相关测试和用户界面；保留通用插件权限、HTTPS 域名限制和 `requiresUserInteraction` 协议。真实授权源需通过外部插件提供。
+- 本地示例源：从生产 `SourceRegistry` 和 APK 路径移除；合成 source 移入测试代码，插件示例保留在 `plugin-sdk/fixtures`，由 CLI 离线验证，不注册到 Beta UI。
+- UI：移除“原型”、内置示例源、MYCOMIC、网页会话等开发/站点专属文案；错误提示改为用户可执行的重试、返回或重新导入建议，不显示堆栈或内部请求错误。
+- 发布基础设施：新增 LICENSE、CONTRIBUTING、CODE_OF_CONDUCT、SECURITY、CHANGELOG、Issue/PR 模板、CI、Beta 发布说明、release signing 模板和 release APK 公开面检查。
+- 验证：`:core:source-runtime:test`、`:core:data:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:plugin-cli:test`、`:plugin-cli:installDist` 和 `:app:verifyReleasePublicSurface` 均通过。
+- APK：`app/build/outputs/apk/debug/app-debug.apk` SHA-256 为 `F09BEA94FBC432AE549CF17A56E3434077B0B7200A1E75AD5850EDBD40BDA1EA`；未签名 release `app/build/outputs/apk/release/app-release-unsigned.apk` SHA-256 为 `0D1E3F8438DCE1E7932635F4222D58CE6524E5FFBF0EC7B7834A2D86AFEB54B1`。
+- 发布限制：当前生成的是未签名 release APK；需在本地配置真实 release keystore 后再分发。外部插件的授权、版权、条款和隐私责任由插件作者与用户承担。

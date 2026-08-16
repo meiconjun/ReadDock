@@ -4,10 +4,10 @@
 
     <application
         android:allowBackup="true"
-        android:label="ComicHub"
+        android:label="PageLoom"
         android:supportsRtl="true"
         android:enableOnBackInvokedCallback="true"
-        android:theme="@style/Theme.ComicHub">
+        android:theme="@style/Theme.PageLoom">
         <activity
             android:name=".MainActivity"
             android:exported="true">

@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val signingPropertiesFile = rootProject.file("keystore.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.isFile) {
+        signingPropertiesFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -12,8 +21,8 @@ android {
         applicationId = "com.comichub.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.5.0-beta01"
     }
 
     buildFeatures {
@@ -31,6 +40,56 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    if (signingPropertiesFile.isFile) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (signingPropertiesFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+}
+
+tasks.register("verifyReleasePublicSurface") {
+    dependsOn("assembleRelease")
+    doLast {
+        val releaseDirectory = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val apk = listOf("app-release.apk", "app-release-unsigned.apk")
+            .map { releaseDirectory.resolve(it) }
+            .firstOrNull { it.isFile }
+        check(apk != null) { "release APK not found in ${releaseDirectory.absolutePath}" }
+        val forbiddenTokens = listOf(
+            "MYCOMIC",
+            "MockSource",
+            "本地示例源",
+            "插件化漫画阅读器原型",
+            "com.comichub.mock",
+            "com.pageloom.test.synthetic"
+        )
+        val findings = mutableListOf<String>()
+        zipTree(apk).visit {
+            if (!isDirectory) {
+                val content = file.readBytes().toString(Charsets.ISO_8859_1)
+                forbiddenTokens.filter(content::contains).forEach { token ->
+                    findings += "$relativePath: $token"
+                }
+            }
+        }
+        check(findings.isEmpty()) {
+            "release APK contains forbidden public-surface content: ${findings.distinct().joinToString() }"
+        }
     }
 }
 

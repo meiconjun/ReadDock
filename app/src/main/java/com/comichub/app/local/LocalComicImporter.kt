@@ -106,10 +106,10 @@ class LocalComicImporter(
             LocalImportResult.Success(comic)
         } catch (error: LocalComicParseException) {
             workDir.deleteRecursively()
-            LocalImportResult.Error(error.message ?: "文件解析失败", error)
+            LocalImportResult.Error("文件无法解析，请确认格式完整后重试", error)
         } catch (error: Throwable) {
             workDir.deleteRecursively()
-            LocalImportResult.Error("导入失败：${error.message ?: "未知错误"}", error)
+            LocalImportResult.Error("导入失败，请确认文件可读且格式受支持", error)
         }
     }
 

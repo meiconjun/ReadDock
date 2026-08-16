@@ -4,8 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import com.comichub.app.ui.ComicHubApp
-import com.comichub.app.ui.ComicHubTheme
+import com.comichub.app.ui.PageLoomApp
+import com.comichub.app.ui.PageLoomTheme
 
 class MainActivity : ComponentActivity() {
     private var appBackHandler: (() -> Boolean)? = null
@@ -26,8 +26,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, appBackCallback)
         setContent {
-            ComicHubTheme {
-                ComicHubApp()
+            PageLoomTheme {
+                PageLoomApp()
             }
         }
     }

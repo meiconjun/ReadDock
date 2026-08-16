@@ -8,7 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class UrlConnectionTransport(
-    private val userAgent: String = "ComicHub/0.1"
+    private val userAgent: String = "PageLoom/0.5"
 ) : NetworkTransport {
     override suspend fun execute(request: NetworkRequest): NetworkResponse = withContext(Dispatchers.IO) {
         val connection = (URL(request.url).openConnection() as HttpURLConnection).apply {

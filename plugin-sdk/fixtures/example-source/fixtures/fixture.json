@@ -1,5 +1,5 @@
 {
-  "contentAuthorization": "local synthetic fixture owned by the ComicHub project",
+  "contentAuthorization": "project-owned synthetic fixture for offline CI",
   "expected": {
     "searchResults": 1,
     "title": "星海信使",

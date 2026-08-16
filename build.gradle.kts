@@ -7,3 +7,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21" apply false
 }
+
+allprojects {
+    group = "io.pageloom"
+    version = "0.5.0-beta01"
+}
