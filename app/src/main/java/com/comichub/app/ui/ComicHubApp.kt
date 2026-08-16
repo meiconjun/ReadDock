@@ -52,6 +52,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +67,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
@@ -114,19 +117,36 @@ fun ComicHubApp() {
         }
     }
 
+    DisposableEffect(activity, viewModel.screen) {
+        val window = activity?.window
+        val previousNavigationBarColor = window?.navigationBarColor
+        if (viewModel.screen == AppScreen.LOCAL_READER) {
+            window?.navigationBarColor = Color.Black.toArgb()
+        }
+        onDispose {
+            previousNavigationBarColor?.let { color ->
+                window?.navigationBarColor = color
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             if (viewModel.screen != AppScreen.SEARCH &&
                 viewModel.screen != AppScreen.LIBRARY &&
                 viewModel.screen != AppScreen.SOURCES
             ) {
+                val isLocalReader = viewModel.screen == AppScreen.LOCAL_READER
                 TopAppBar(
                     title = {
                         Text(
                             when (viewModel.screen) {
                                 AppScreen.DETAIL -> viewModel.selectedDetail?.summary?.title ?: "漫画详情"
                                 AppScreen.READER -> viewModel.selectedChapter?.title ?: "阅读"
-                                AppScreen.LOCAL_READER -> "本地阅读"
+                                AppScreen.LOCAL_READER -> localComics
+                                    .firstOrNull { it.id == viewModel.selectedLocalComicId }
+                                    ?.title
+                                    ?: "本地阅读"
                                 AppScreen.WEB_READER -> viewModel.selectedChapter?.title ?: "网页阅读"
                                 else -> "ComicHub"
                             }
@@ -136,7 +156,12 @@ fun ComicHubApp() {
                         IconButton(onClick = viewModel::back) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = if (isLocalReader) Color.Black else MaterialTheme.colorScheme.surface,
+                        titleContentColor = if (isLocalReader) Color.White else MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = if (isLocalReader) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
                 )
             }
         },

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -44,13 +46,13 @@ fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Black)
     ) {
         when (state.status) {
             LocalReaderStatus.LOADING -> CenteredReaderMessage {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = Color.White)
                 Spacer(Modifier.height(12.dp))
-                Text("正在打开本地漫画…")
+                Text("正在打开本地漫画…", color = Color.White)
             }
             LocalReaderStatus.EMPTY -> CenteredReaderMessage {
                 Text("本地漫画没有可读取的页面", color = MaterialTheme.colorScheme.error)
@@ -80,15 +82,22 @@ fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
 
 @Composable
 private fun ReaderPageHeader(state: LocalReaderState) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
-            state.comic?.title ?: "本地漫画",
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1
+            "第 ${state.currentPage}/${state.pageCount} 页",
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge
         )
         Text(
-            "第 ${state.currentPage}/${state.pageCount} 页 · ${state.comic?.format.orEmpty()}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            " · ${state.comic?.format.orEmpty()}",
+            color = Color.LightGray,
+            style = MaterialTheme.typography.labelLarge
         )
         state.progressErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
@@ -101,14 +110,14 @@ private fun ColumnScope.ReaderPageContent(state: LocalReaderState, onRetry: () -
         modifier = Modifier
             .weight(1f)
             .fillMaxWidth()
-            .padding(horizontal = 12.dp),
+            .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         when {
             state.isPageLoading -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = Color.White)
                 Spacer(Modifier.height(12.dp))
-                Text("正在加载第 ${state.currentPage} 页…")
+                Text("正在加载第 ${state.currentPage} 页…", color = Color.White)
             }
             state.pageErrorMessage != null -> Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -129,7 +138,7 @@ private fun ColumnScope.ReaderPageContent(state: LocalReaderState, onRetry: () -
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp)
-            ) { Text(content.text) }
+            ) { Text(content.text, color = Color.White) }
             else -> Text("当前页面没有可显示的内容", color = MaterialTheme.colorScheme.error)
         }
     }
@@ -149,15 +158,30 @@ private fun ReaderPageControls(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        TextButton(onClick = onPrevious, enabled = previousEnabled) { Text("上一页") }
-        Text("$currentPage / $pageCount", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = onNext, enabled = nextEnabled) { Text("下一页") }
+        val buttonColors = ButtonDefaults.textButtonColors(
+            contentColor = Color.White,
+            disabledContentColor = Color(0xFF666666)
+        )
+        TextButton(
+            onClick = onPrevious,
+            enabled = previousEnabled,
+            colors = buttonColors
+        ) { Text("上一页") }
+        Text("$currentPage / $pageCount", color = Color.LightGray)
+        TextButton(
+            onClick = onNext,
+            enabled = nextEnabled,
+            colors = buttonColors
+        ) { Text("下一页") }
     }
 }
 
 @Composable
 private fun CenteredReaderMessage(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) { content() }
     }
 }
