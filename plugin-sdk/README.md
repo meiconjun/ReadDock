@@ -1,6 +1,6 @@
-# PageLoom Plugin SDK
+# ReadDock Plugin SDK
 
-这里提供 PageLoom 外部数据源插件的协议示例、声明式包格式、受限脚本示例和离线合成 fixture。
+这里提供 ReadDock 外部数据源插件的协议示例、声明式包格式、受限脚本示例和离线合成 fixture。
 
 ## 示例文件
 
@@ -18,7 +18,7 @@ gradle :plugin-cli:run --args="validate ../plugin-sdk/fixtures/example-source"
 gradle :plugin-cli:run --args="test ../plugin-sdk/fixtures/example-source"
 ```
 
-测试只读取本地快照，不访问网络。fixture 中的标题、作者和页面是合成内容，不代表 PageLoom 已接入真实商业网站。
+测试只读取本地快照，不访问网络。fixture 中的标题、作者和页面是合成内容，不代表 ReadDock 已接入真实商业网站。
 
 ## 安全边界
 
@@ -28,4 +28,4 @@ manifest 必须声明 HTTPS 基地址、允许域名、能力、权限、速率�
 
 ## 发布建议
 
-使用 `pageloom-source` 完成初始化、校验、fixture 测试、签名打包和 RSA 公钥生成。开发密钥与发布密钥分离，私钥只保存在本机安全位置，不要提交到 Git。
+使用 `readdock-source` 完成初始化、校验、fixture 测试、签名打包和 RSA 公钥生成。开发密钥与发布密钥分离，私钥只保存在本机安全位置，不要提交到 Git。

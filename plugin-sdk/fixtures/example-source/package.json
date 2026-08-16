@@ -1,7 +1,7 @@
 {
   "manifest": {
-    "id": "com.pageloom.fixture",
-    "name": "PageLoom Synthetic Fixture",
+    "id": "com.readdock.fixture",
+    "name": "ReadDock Synthetic Fixture",
     "version": "0.1.0",
     "apiVersion": 1,
     "baseUrl": "https://fixture.example",

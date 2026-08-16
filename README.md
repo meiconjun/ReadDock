@@ -1,6 +1,6 @@
-# PageLoom
+# ReadDock
 
-PageLoom 是一个 Android 漫画阅读器 Beta，面向希望把在线数据源、本地漫画文件和可审计插件统一放进一个阅读体验的用户与开发者。
+ReadDock 是一个 Android 漫画阅读器 Beta，面向希望把在线数据源、本地漫画文件和可审计插件统一放进一个阅读体验的用户与开发者。
 
 当前公开版本：`0.5.0-beta01`。
 
@@ -17,15 +17,15 @@ PageLoom 是一个 Android 漫画阅读器 Beta，面向希望把在线数据源
 
 ## 隐私与安全边界
 
-本地 EPUB、MOBI、PDF、CBZ/ZIP 和图片文件会复制到应用私有存储，仅用于本地解析和阅读，不会由 PageLoom 上传网络。网络请求只来自用户启用的数据源插件、插件仓库或在线图片加载。
+本地 EPUB、MOBI、PDF、CBZ/ZIP 和图片文件会复制到应用私有存储，仅用于本地解析和阅读，不会由 ReadDock 上传网络。网络请求只来自用户启用的数据源插件、插件仓库或在线图片加载。
 
-插件运行在 PageLoom 的统一协议边界内：只能使用声明的能力、权限和域名；插件包应使用可信公钥签名。插件作者和用户必须遵守目标网站条款、版权和授权要求。主仓库不提供真实商业网站数据源，也不绕过验证码、付费墙、登录限制、DRM、访问控制或反爬机制。
+插件运行在 ReadDock 的统一协议边界内：只能使用声明的能力、权限和域名；插件包应使用可信公钥签名。插件作者和用户必须遵守目标网站条款、版权和授权要求。主仓库不提供真实商业网站数据源，也不绕过验证码、付费墙、登录限制、DRM、访问控制或反爬机制。
 
 需要登录或人工操作的数据源只能通过通用的 `requiresUserInteraction` 协议由外部插件声明；本 Beta 不内置任何真实站点会话适配器。
 
 ## 模块
 
-- `app`：PageLoom Android UI、在线阅读器和本地阅读器
+- `app`：ReadDock Android UI、在线阅读器和本地阅读器
 - `core:source-api`：数据源模型、插件能力和权限协议
 - `core:source-runtime`：声明式/受限脚本插件运行时、网络网关、签名和仓库校验
 - `core:data`：Room 书架、阅读进度、图片缓存和下载队列
@@ -86,29 +86,29 @@ gradle :app:verifyReleasePublicSurface
 
 ## 插件 CLI
 
-安装发行版后使用 `pageloom-source`：
+安装发行版后使用 `readdock-source`：
 
 ```text
-pageloom-source init example-source
-pageloom-source validate example-source
-pageloom-source test example-source
-pageloom-source package example-source dist/example-source.json
-pageloom-source keygen signing-keys
+readdock-source init example-source
+readdock-source validate example-source
+readdock-source test example-source
+readdock-source package example-source dist/example-source.json
+readdock-source keygen signing-keys
 ```
 
-仓库示例使用项目自有合成内容，只访问离线快照，不代表 PageLoom 已接入任何真实商业网站。
+仓库示例使用项目自有合成内容，只访问离线快照，不代表 ReadDock 已接入任何真实商业网站。
 
 ## Beta 限制
 
 - 当前 Beta 不内置真实商业网站数据源，在线内容需要用户自行安装合规的外部插件。
-- `applicationId` 仍为历史兼容值 `com.comichub.app`；公开品牌已切换为 PageLoom。未来是否迁移 applicationId 需要单独评估已安装应用、Room 数据库、签名和升级路径。
-- 没有配置 release signing 时，只能生成未签名或本地签名的 release APK；真实签名密钥不得提交到仓库。
+- `applicationId` 已确定为 `com.readdock.app`；由于项目尚未对外发布，本次 Beta 同步迁移了 Android 身份、namespace 和内部源码包名。
+- release signing 只使用项目维护者本机的 keystore；真实签名密钥和 `keystore.properties` 不得提交到仓库。
 - 插件仓库需要用户配置 HTTPS 地址、keyId 和可信公钥；本项目不提供默认远程仓库。
 - 部分需要用户交互的数据源能力只保留协议和安全边界，外部插件仍需自行实现合规的交互流程。
 
 ## 版权与授权
 
-PageLoom 是阅读器和插件运行时，不提供漫画内容目录。用户对导入文件、安装插件、访问目标站点以及由此产生的版权、许可、隐私和条款责任负责。请仅阅读你有权访问和保存的内容。
+ReadDock 是阅读器和插件运行时，不提供漫画内容目录。用户对导入文件、安装插件、访问目标站点以及由此产生的版权、许可、隐私和条款责任负责。请仅阅读你有权访问和保存的内容。
 
 ## 发布与校验
 
@@ -117,5 +117,13 @@ Beta 发布信息见 [docs/RELEASE_BETA_0.5.0-beta01.md](docs/RELEASE_BETA_0.5.0
 ```powershell
 Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
 ```
+
+本机 release signing 使用 `signing-keys/readdock-release.jks` 和被 Git 忽略的 `keystore.properties`。签名证书指纹可用以下命令查看：
+
+```powershell
+keytool -list -v -keystore .\signing-keys\readdock-release.jks -alias readdock-release
+```
+
+不要提交 keystore、密码或 `keystore.properties`；公开 CI 应通过加密 secrets 配置签名。
 
 欢迎通过 Issue 和 Pull Request 报告可复现的问题。提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 和 [SECURITY.md](SECURITY.md)。

@@ -4,14 +4,14 @@
 
 ### Added
 
-- PageLoom Beta 公开发布文档、贡献规范、安全策略和 CI。
+- ReadDock Beta 公开发布文档、贡献规范、安全策略和 CI。
 - EPUB、MOBI、PDF、CBZ/ZIP 和图片本地阅读路径的公开说明。
 - release APK 公开面检查和本地 release signing 配置模板。
 - 外部数据源插件的正式安装、仓库、签名和授权边界说明。
 
 ### Changed
 
-- 公开品牌统一为 PageLoom；历史 `applicationId` 和包名暂保持兼容。
+- 公开品牌、Android applicationId、namespace、源码包名和 CLI 统一为 ReadDock。
 - 正式 source registry 不再注册内置合成 source。
 - 移除 MYCOMIC 真实适配器、真实站点会话实现和对应 UI；真实授权源需由外部插件提供。
 - 测试数据只保留在测试和 fixture 路径。

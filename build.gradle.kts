@@ -9,6 +9,6 @@ plugins {
 }
 
 allprojects {
-    group = "io.pageloom"
+    group = "io.readdock"
     version = "0.5.0-beta01"
 }

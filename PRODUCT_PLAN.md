@@ -1,8 +1,8 @@
-# PageLoom 产品规划
+# ReadDock 产品规划
 
 ## 定位
 
-PageLoom 是一个 Android 本地优先漫画阅读器。它把本地文件阅读、在线数据源插件、书架和受限阅读器能力分开，让用户可以阅读自有文件，也可以在自行确认授权和条款后安装外部数据源插件。
+ReadDock 是一个 Android 本地优先漫画阅读器。它把本地文件阅读、在线数据源插件、书架和受限阅读器能力分开，让用户可以阅读自有文件，也可以在自行确认授权和条款后安装外部数据源插件。
 
 公开 Beta 的核心原则：主仓库不内置真实商业网站数据源，不包含真实站点页面/图片快照，不绕过验证码、付费墙、登录限制、DRM、访问控制或反爬机制。
 
@@ -20,7 +20,7 @@ PageLoom 是一个 Android 本地优先漫画阅读器。它把本地文件阅�
 ## 模块边界
 
 ```text
-PageLoom Android App
+ReadDock Android App
 ├── Compose UI / Local Reader / Online Reader
 ├── Room Library / Image Cache
 ├── Source API / Source Runtime

@@ -1,22 +1,24 @@
 # 品牌命名检查
 
-本轮按用户给出的候选名称做了本地一致性检查，并使用公开 GitHub/Web 搜索做了有限的占用情况检查。搜索结果不能代替商标、域名、应用商店或完整 GitHub 名称查重，因此不对任何候选名称宣称唯一。
+ReadDock 已由项目维护者确定为最终工作品牌。本文件记录有限公开搜索结果，不代替商标、域名、应用商店或完整 GitHub 名称清查，因此不对名称宣称唯一或已注册。
 
-| 候选 | GitHub/公开搜索观察 | 本轮结论 |
+| 候选 | 公开搜索观察 | 本轮结论 |
 | --- | --- | --- |
-| PageLoom | 已发现 `pageloom` 相关 GitHub/公开产品活动，不能视为未占用。 | 暂用工作名称，待最终确认 |
-| PanelHarbor | 本轮有限搜索未确认同名仓库。 | 未清权，待确认 |
-| InkNest | 已发现 `p2devs/InkNest` 漫画移动应用仓库。 | 不建议 |
-| FrameLoom | 已发现 `sixteenmillimeter/frameloom` 项目。 | 不建议 |
-| StoryWeave | 已发现 `ShiyangZheng/storyweave` 仓库。 | 不建议 |
-| ReadDock | 本轮有限搜索未确认同名仓库。 | 未清权，待确认 |
-| InkAtlas | 已发现 GitHub 上的 InkAtlas 相关工具内容。 | 未清权，待确认 |
-| PanelTrail | 本轮有限搜索未确认同名仓库。 | 未清权，待确认 |
+| PageLoom | 已发现相关公开产品活动。 | 不再采用 |
+| PanelHarbor | 本轮有限搜索未确认同名仓库。 | 未清权 |
+| InkNest | 已发现同名 GitHub 项目。 | 不采用 |
+| FrameLoom | 已发现同名公开项目。 | 不采用 |
+| StoryWeave | 已发现同名 GitHub 项目。 | 不采用 |
+| ReadDock | 本轮有限搜索未完成完整清查。 | 用户已确定采用，不宣称唯一 |
+| InkAtlas | 已发现相关 GitHub 工具内容。 | 未清权 |
+| PanelTrail | 本轮有限搜索未确认同名仓库。 | 未清权 |
 
-## 当前采用方式
+## 当前统一命名
 
-- 公开品牌、Android label、README 标题、Gradle root project、主要 UI 类名和 CLI 名称使用 `PageLoom`/`pageloom-source`。
-- `applicationId = com.comichub.app`、Android namespace、历史数据库文件名 `comichub.db` 和 `com.comichub.*` 内部包名暂时保留，以避免未经评估地破坏已安装应用、Room 数据库、签名或升级路径。
-- `ComicHubDatabase` 已改为 `PageLoomDatabase`，不改变数据库文件名；主要 UI 类已改为 `PageLoomApp` 和 `PageLoomTheme`。
+- Android label、README、Gradle root project、主要 UI 类和 CLI 使用 `ReadDock` / `readdock-source`。
+- Android `applicationId` 和 app namespace 使用 `com.readdock.app`；源码包名统一为 `com.readdock.*`。
+- 数据库类为 `ReadDockDatabase`，数据库文件名为 `readdock.db`。
+- 外部插件示例和测试标识使用 `com.readdock.*`，不包含旧品牌或真实商业站点标识。
+- 旧品牌只在保留的历史迭代记录和 Git 历史中作为历史信息存在，不作为当前产品名称。
 
-最终项目名、GitHub 仓库名、商标/域名可用性和是否迁移 applicationId 仍需用户确认。完成确认前不要把 `PageLoom` 视为唯一或已注册名称。
+GitHub 仓库所有者、仓库 URL、商标和域名仍需单独确认。

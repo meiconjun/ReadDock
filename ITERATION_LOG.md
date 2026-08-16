@@ -644,3 +644,18 @@ gradle :app:assembleDebug
 - 验证：`:core:source-runtime:test`、`:core:data:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:plugin-cli:test`、`:plugin-cli:installDist` 和 `:app:verifyReleasePublicSurface` 均通过。
 - APK：`app/build/outputs/apk/debug/app-debug.apk` SHA-256 为 `F09BEA94FBC432AE549CF17A56E3434077B0B7200A1E75AD5850EDBD40BDA1EA`；未签名 release `app/build/outputs/apk/release/app-release-unsigned.apk` SHA-256 为 `0D1E3F8438DCE1E7932635F4222D58CE6524E5FFBF0EC7B7834A2D86AFEB54B1`。
 - 发布限制：当前生成的是未签名 release APK；需在本地配置真实 release keystore 后再分发。外部插件的授权、版权、条款和隐私责任由插件作者与用户承担。
+
+### Iteration 19：ReadDock 身份与正式签名配置
+
+状态：已完成
+
+时间：2026-08-16
+
+完成结果：
+
+- 品牌：最终采用 `ReadDock`；Android label、README、Gradle root project、主要 UI 类、CLI 和插件 SDK 文档已统一。
+- Android 身份：`applicationId`、app namespace 统一为 `com.readdock.app`；源码包名统一为 `com.readdock.*`；数据库类和文件名统一为 `ReadDockDatabase` / `readdock.db`。
+- 签名：生成本机 release keystore `signing-keys/readdock-release.jks`，alias 为 `readdock-release`；keystore 和 `keystore.properties` 均被 Git 忽略。证书 SHA-256 为 `02:3E:21:2A:D2:E5:79:EA:E4:F5:C4:A8:78:53:44:F0:E1:D3:12:F2:E8:32:D6:07:35:F9:5F:5C:F3:7B:4B:52`。
+- 验证：`:core:source-runtime:test`、`:core:data:testDebugUnitTest`、`:app:testDebugUnitTest`、`:app:assembleDebug`、`:plugin-cli:test`、`:app:assembleRelease` 和 `:app:verifyReleasePublicSurface` 均通过。
+- APK：signed release `app/build/outputs/apk/release/app-release.apk` SHA-256 为 `A1B09170BDBBDDAA329B89552BC632FAB45822B98D601ED244A969870A82699F`；debug `app/build/outputs/apk/debug/app-debug.apk` SHA-256 为 `72CBE2E7707A95B9ED0857D375F7C42CB39B7CA6D650EE10EE9F103CBAC7383E`。
+- 发布限制：签名私钥和密码只存在于本机，未来公开 CI 必须使用加密 secrets；外部插件的授权、版权、条款和隐私责任由插件作者与用户承担。

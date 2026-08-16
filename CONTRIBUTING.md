@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢参与 PageLoom。提交 Issue 或 Pull Request 前，请先确认问题可以在公开仓库中安全复现，且不包含真实商业网站数据、个人数据、Cookie、凭据、私有 URL 或未授权漫画内容。
+感谢参与 ReadDock。提交 Issue 或 Pull Request 前，请先确认问题可以在公开仓库中安全复现，且不包含真实商业网站数据、个人数据、Cookie、凭据、私有 URL 或未授权漫画内容。
 
 ## 开发流程
 

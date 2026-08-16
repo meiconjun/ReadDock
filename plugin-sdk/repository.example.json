@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "repositoryId": "comichub.example",
+  "repositoryId": "readdock.example",
   "plugins": [
     {
       "id": "com.example.source",

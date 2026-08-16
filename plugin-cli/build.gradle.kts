@@ -9,8 +9,8 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.comichub.cli.MainKt")
-    applicationName = "pageloom-source"
+    mainClass.set("com.readdock.cli.MainKt")
+    applicationName = "readdock-source"
 }
 
 dependencies {

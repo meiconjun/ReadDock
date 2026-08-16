@@ -14,11 +14,11 @@ val signingProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.comichub.app"
+    namespace = "com.readdock.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.comichub.app"
+        applicationId = "com.readdock.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 7
@@ -75,8 +75,8 @@ tasks.register("verifyReleasePublicSurface") {
             "MockSource",
             "本地示例源",
             "插件化漫画阅读器原型",
-            "com.comichub.mock",
-            "com.pageloom.test.synthetic"
+            "com.readdock.mock",
+            "com.readdock.test.synthetic"
         )
         val findings = mutableListOf<String>()
         zipTree(apk).visit {

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.comichub.data"
+    namespace = "com.readdock.data"
     compileSdk = 35
 
     defaultConfig {

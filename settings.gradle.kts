@@ -16,7 +16,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PageLoom"
+rootProject.name = "ReadDock"
 include(":app")
 include(":core:source-api")
 include(":core:source-runtime")
