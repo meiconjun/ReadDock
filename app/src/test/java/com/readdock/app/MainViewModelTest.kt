@@ -162,6 +162,59 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `interactive navigation publishes a new URL before the load coroutine runs`() = runTest {
+        val source = SyntheticComicSource(requiresUserInteraction = true)
+        val viewModel = MainViewModel(
+            context,
+            repository,
+            source,
+            localComicRepository = localRepository
+        )
+        advanceUntilIdle()
+
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        val chapters = viewModel.selectedDetail!!.chapters
+        viewModel.openChapter(chapters.first())
+        val firstGeneration = viewModel.webReaderGeneration
+        assertEquals(chapters.first().id, viewModel.selectedChapter?.id)
+        assertEquals(chapters.first().id, viewModel.webReaderUrl)
+        assertEquals(WebReaderLoadStatus.LOADING, viewModel.webReaderLoadStatus)
+
+        viewModel.openNextChapter()
+
+        assertTrue(viewModel.webReaderGeneration > firstGeneration)
+        assertEquals(chapters[1].id, viewModel.selectedChapter?.id)
+        assertEquals(chapters[1].id, viewModel.webReaderUrl)
+        assertEquals(WebReaderLoadStatus.LOADING, viewModel.webReaderLoadStatus)
+    }
+
+    @Test
+    fun `leaving an interactive reader exposes cancellation and permits recovery`() = runTest {
+        val source = SyntheticComicSource(requiresUserInteraction = true)
+        val viewModel = MainViewModel(
+            context,
+            repository,
+            source,
+            localComicRepository = localRepository
+        )
+        advanceUntilIdle()
+
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        viewModel.openChapter(viewModel.selectedDetail!!.chapters.first())
+        assertEquals(AppScreen.WEB_READER, viewModel.screen)
+
+        viewModel.back()
+
+        assertEquals(AppScreen.DETAIL, viewModel.screen)
+        assertEquals(WebReaderLoadStatus.CANCELED, viewModel.webReaderLoadStatus)
+        assertEquals(null, viewModel.webReaderUrl)
+    }
+
+    @Test
     fun `opening a chapter does not eagerly fetch every image`() = runTest {
         val fetchCount = AtomicInteger(0)
         val viewModel = createViewModel(fetchCount)

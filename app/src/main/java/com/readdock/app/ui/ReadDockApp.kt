@@ -1,8 +1,11 @@
 package com.readdock.app.ui
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -62,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
@@ -87,6 +91,7 @@ import com.readdock.app.MainViewModel
 import com.readdock.app.MessageTone
 import com.readdock.app.UiMessage
 import com.readdock.app.LocalImportStatus
+import com.readdock.app.WebReaderLoadStatus
 import com.readdock.app.local.LocalReaderScreen
 import com.readdock.app.reader.ZoomableReaderImage
 import com.readdock.data.LocalComic
@@ -249,11 +254,38 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val context = LocalContext.current
     val url = viewModel.webReaderUrl ?: return
     val allowedDomains = viewModel.webReaderAllowedDomains
+    val generation = viewModel.webReaderGeneration
     val previousChapter = viewModel.previousChapter()
     val nextChapter = viewModel.nextChapter()
-    var pageError by remember(url) { mutableStateOf<String?>(null) }
-    var pageLoading by remember(url) { mutableStateOf(true) }
-    val webView = remember(url, allowedDomains) {
+    var pageError by remember(generation, url) { mutableStateOf<String?>(null) }
+    var pageLoading by remember(generation, url) { mutableStateOf(true) }
+    var actualPageUrl by remember(generation, url) { mutableStateOf<String?>(null) }
+    fun confirmVisibleReaderDocument(view: WebView, pageUrl: String) {
+        if (viewModel.webReaderGeneration != generation || !isHttpReaderUrl(pageUrl)) return
+        if (!isExpectedReaderUrl(pageUrl, url)) {
+            pageError = "章节地址未切换到目标页面：$pageUrl"
+            pageLoading = false
+            viewModel.markWebReaderLoadFailed(generation, pageUrl, pageError!!)
+            return
+        }
+        view.evaluateJavascript(READER_DOCUMENT_INSPECTION_SCRIPT) { inspection ->
+            if (viewModel.webReaderGeneration != generation) return@evaluateJavascript
+            val expectedPath = Uri.parse(url).path.orEmpty()
+            if (expectedPath.isBlank() || !inspection.contains(expectedPath)) {
+                pageError = "WebView 文档仍不是目标章节，已阻止显示为加载成功"
+                pageLoading = false
+                viewModel.markWebReaderLoadFailed(generation, pageUrl, pageError!!)
+                return@evaluateJavascript
+            }
+            Log.d("ReadDockWebReader", "verified generation=$generation url=$pageUrl document=$inspection")
+            actualPageUrl = pageUrl
+            pageError = null
+            pageLoading = false
+            viewModel.markWebReaderLoadFinished(generation, pageUrl)
+            CookieManager.getInstance().flush()
+        }
+    }
+    val webView = remember(generation, url, allowedDomains) {
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -265,30 +297,46 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             // Keep WebView scrolling intact while treating a short press as
             // the reader chrome toggle. WebView's click listener is not
             // reliable for pages that handle their own touch events.
+            val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
             var touchDownX = 0f
             var touchDownY = 0f
             var touchDownAt = 0L
+            var touchMoved = false
             setOnTouchListener { _, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         touchDownX = event.x
                         touchDownY = event.y
                         touchDownAt = SystemClock.uptimeMillis()
+                        touchMoved = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (abs(event.x - touchDownX) > touchSlop ||
+                            abs(event.y - touchDownY) > touchSlop
+                        ) {
+                            touchMoved = true
+                        }
                     }
                     MotionEvent.ACTION_UP -> {
                         val isTap =
-                            abs(event.x - touchDownX) < 24f &&
-                                abs(event.y - touchDownY) < 24f &&
+                            !touchMoved &&
+                                abs(event.x - touchDownX) <= touchSlop &&
+                                abs(event.y - touchDownY) <= touchSlop &&
                                 SystemClock.uptimeMillis() - touchDownAt < 600L
                         if (isTap) viewModel.toggleReaderChrome()
                     }
+                    MotionEvent.ACTION_CANCEL -> touchMoved = true
                 }
                 false
             }
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, pageUrl: String, favicon: android.graphics.Bitmap?) {
                     super.onPageStarted(view, pageUrl, favicon)
+                    if (viewModel.webReaderGeneration != generation) return
+                    if (!isHttpReaderUrl(pageUrl)) return
                     pageLoading = true
+                    actualPageUrl = pageUrl
+                    viewModel.markWebReaderLoadStarted(generation, pageUrl)
                 }
 
                 override fun shouldOverrideUrlLoading(
@@ -298,19 +346,22 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
 
                 override fun onPageFinished(view: WebView, pageUrl: String) {
                     super.onPageFinished(view, pageUrl)
+                    if (viewModel.webReaderGeneration != generation) return
+                    if (!isHttpReaderUrl(pageUrl)) return
                     view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
-                    pageError = null
-                    pageLoading = false
-                    CookieManager.getInstance().flush()
+                    confirmVisibleReaderDocument(view, pageUrl)
                 }
 
                 override fun onPageCommitVisible(view: WebView, pageUrl: String) {
                     super.onPageCommitVisible(view, pageUrl)
+                    if (viewModel.webReaderGeneration != generation) return
+                    if (!isHttpReaderUrl(pageUrl)) return
                     // A security-check page can replace its DOM in place after
                     // the initial load. Re-install the reader script when the
                     // visible document changes so a completed user check can
                     // continue into the image-only reader.
                     view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
+                    confirmVisibleReaderDocument(view, pageUrl)
                 }
 
                 override fun onReceivedError(
@@ -319,9 +370,38 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     error: WebResourceError
                 ) {
                     super.onReceivedError(view, request, error)
-                    if (request.isForMainFrame) {
+                    if (request.isForMainFrame && isHttpReaderUrl(request.url.toString()) &&
+                        viewModel.webReaderGeneration == generation
+                    ) {
                         pageError = "网页加载失败：${error.description}"
                         pageLoading = false
+                        actualPageUrl = request.url.toString()
+                        viewModel.markWebReaderLoadFailed(
+                            generation,
+                            request.url.toString(),
+                            error.description.toString()
+                        )
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    errorResponse: android.webkit.WebResourceResponse
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    if (request.isForMainFrame && errorResponse.statusCode >= 400 &&
+                        isHttpReaderUrl(request.url.toString()) &&
+                        viewModel.webReaderGeneration == generation
+                    ) {
+                        pageError = "网页加载失败：HTTP ${errorResponse.statusCode}"
+                        pageLoading = false
+                        actualPageUrl = request.url.toString()
+                        viewModel.markWebReaderLoadFailed(
+                            generation,
+                            request.url.toString(),
+                            "HTTP ${errorResponse.statusCode}"
+                        )
                     }
                 }
             }
@@ -331,15 +411,20 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
 
     BackHandler { viewModel.back() }
 
-    DisposableEffect(webView) {
+    DisposableEffect(webView, generation) {
         onDispose {
+            if (viewModel.webReaderGeneration == generation) {
+                viewModel.markWebReaderLoadCanceled(generation)
+            }
             webView.stopLoading()
             webView.destroy()
         }
     }
-    LaunchedEffect(url) {
+    LaunchedEffect(generation, url) {
         pageLoading = true
         pageError = null
+        actualPageUrl = null
+        viewModel.markWebReaderLoadStarted(generation, url)
         webView.stopLoading()
         webView.loadUrl(url)
     }
@@ -349,10 +434,12 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             .fillMaxSize()
             .padding(padding)
     ) {
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxSize()
-        )
+        key(generation, url, allowedDomains) {
+            AndroidView(
+                factory = { webView },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         if (viewModel.readerChromeVisible) {
             Box(
                 modifier = Modifier
@@ -372,7 +459,6 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     ReaderControls(
                         previousChapter = previousChapter,
                         nextChapter = nextChapter,
-                        enabled = !viewModel.isLoading && !pageLoading,
                         onPrevious = viewModel::openPreviousChapter,
                         onChapterList = viewModel::back,
                         onNext = viewModel::openNextChapter
@@ -392,11 +478,17 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("正在加载章节…")
+                    Text(
+                        when (viewModel.webReaderLoadStatus) {
+                            WebReaderLoadStatus.CANCELED -> "章节加载已取消"
+                            WebReaderLoadStatus.FAILED -> "章节加载失败"
+                            else -> "正在加载章节…"
+                        }
+                    )
                 }
             }
         }
-        pageError?.let { message ->
+        (pageError ?: viewModel.webReaderLoadError)?.let { message ->
             Card(
                 modifier = Modifier
                     .align(androidx.compose.ui.Alignment.TopCenter)
@@ -407,6 +499,8 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     Button(
                         onClick = {
                             pageError = null
+                            pageLoading = true
+                            viewModel.markWebReaderLoadStarted(generation, url)
                             webView.reload()
                         },
                         modifier = Modifier.align(androidx.compose.ui.Alignment.End)
@@ -425,6 +519,34 @@ private fun isAllowedWebHost(host: String?, domains: Set<String>): Boolean {
         normalizedHost == domain || normalizedHost.endsWith(".$domain")
     }
 }
+
+private fun isHttpReaderUrl(url: String): Boolean =
+    url.startsWith("http://", ignoreCase = true) ||
+        url.startsWith("https://", ignoreCase = true)
+
+private fun isExpectedReaderUrl(actualUrl: String, requestedUrl: String): Boolean {
+    val actual = Uri.parse(actualUrl)
+    val requested = Uri.parse(requestedUrl)
+    return actual.scheme.equals(requested.scheme, ignoreCase = true) &&
+        actual.host.equals(requested.host, ignoreCase = true) &&
+        actual.path == requested.path
+}
+
+private val READER_DOCUMENT_INSPECTION_SCRIPT = """
+    (function() {
+        var heading = document.querySelector('h1, h2, [data-flux-heading]');
+        var images = Array.prototype.slice.call(document.images || [])
+            .map(function(image) { return image.currentSrc || image.src || ''; })
+            .filter(function(source) { return source.length > 0; });
+        return JSON.stringify({
+            href: location.href,
+            title: document.title || '',
+            heading: heading ? (heading.innerText || heading.textContent || '') : '',
+            imageCount: images.length,
+            firstImage: images.length > 0 ? images[0] : ''
+        });
+    })()
+""".trimIndent()
 
 /** Keep the browser session, but remove site chrome after the chapter loads. */
 private val PURE_IMAGE_READER_SCRIPT = """
@@ -1226,7 +1348,6 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                 ReaderControls(
                     previousChapter = previousChapter,
                     nextChapter = nextChapter,
-                    enabled = !viewModel.isLoading,
                     onPrevious = viewModel::openPreviousChapter,
                     onChapterList = viewModel::back,
                     onNext = viewModel::openNextChapter
@@ -1367,7 +1488,6 @@ private const val READER_HEADER_ITEM_COUNT = 4
 private fun ReaderControls(
     previousChapter: Chapter?,
     nextChapter: Chapter?,
-    enabled: Boolean,
     onPrevious: () -> Unit,
     onChapterList: () -> Unit,
     onNext: () -> Unit
@@ -1382,20 +1502,18 @@ private fun ReaderControls(
     ) {
         TextButton(
             onClick = onPrevious,
-            enabled = enabled && previousChapter != null,
             colors = buttonColors
         ) {
-            Text("上一章")
+            Text(if (previousChapter == null) "上一章（无）" else "上一章")
         }
-        TextButton(onClick = onChapterList, enabled = enabled, colors = buttonColors) {
+        TextButton(onClick = onChapterList, colors = buttonColors) {
             Text("章节列表")
         }
         TextButton(
             onClick = onNext,
-            enabled = enabled && nextChapter != null,
             colors = buttonColors
         ) {
-            Text("下一章")
+            Text(if (nextChapter == null) "下一章（无）" else "下一章")
         }
     }
 }
