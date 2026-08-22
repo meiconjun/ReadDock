@@ -136,6 +136,32 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `interactive reader navigation resolves and opens the adjacent chapter`() = runTest {
+        val source = SyntheticComicSource(requiresUserInteraction = true)
+        val viewModel = MainViewModel(
+            context,
+            repository,
+            source,
+            localComicRepository = localRepository
+        )
+        advanceUntilIdle()
+
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        val chapters = viewModel.selectedDetail!!.chapters
+        viewModel.openChapter(chapters.first())
+        advanceUntilIdle()
+
+        viewModel.openNextChapter()
+        advanceUntilIdle()
+
+        assertEquals(chapters[1].id, viewModel.selectedChapter?.id)
+        assertEquals(chapters[1].id, viewModel.webReaderUrl)
+        assertEquals(AppScreen.WEB_READER, viewModel.screen)
+    }
+
+    @Test
     fun `opening a chapter does not eagerly fetch every image`() = runTest {
         val fetchCount = AtomicInteger(0)
         val viewModel = createViewModel(fetchCount)
