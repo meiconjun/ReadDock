@@ -4,7 +4,7 @@ ReadDock 是一个先把本地阅读做好、再通过外部插件连接在线�
 
 如果你手上已经有 EPUB、MOBI、PDF、CBZ/ZIP 或图片文件，可以直接导入 ReadDock，在手机或平板上阅读。想接入在线数据源时，再安装符合自己授权和目标网站条款的外部插件。
 
-当前版本：0.5.0-beta01
+当前版本：0.5.0-beta02
 
 ## 先说清楚 ReadDock 是什么
 
@@ -150,8 +150,8 @@ repositories {
 当前 Beta 坐标是：
 
 ~~~text
-io.readdock:source-api:0.5.0-beta01
-io.readdock:source-runtime:0.5.0-beta01
+io.readdock:source-api:0.5.0-beta02
+io.readdock:source-runtime:0.5.0-beta02
 ~~~
 
 Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions 密钥，不要把令牌写进源码、Gradle 文件或 README。
@@ -179,7 +179,7 @@ Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions
 
 本机 release keystore 和 keystore.properties 已被 Git 忽略，不能提交到仓库。其他维护者请参考 [keystore.properties.example](keystore.properties.example)，不要复制或共享现有私钥。
 
-发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta01.md](docs/RELEASE_BETA_0.5.0-beta01.md)。
+发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta02.md](docs/RELEASE_BETA_0.5.0-beta02.md)。
 
 ## 贡献和许可证
 
