@@ -245,6 +245,8 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val context = LocalContext.current
     val url = viewModel.webReaderUrl ?: return
     val allowedDomains = viewModel.webReaderAllowedDomains
+    val previousChapter = viewModel.previousChapter()
+    val nextChapter = viewModel.nextChapter()
     var pageError by remember(url) { mutableStateOf<String?>(null) }
     val webView = remember(url, allowedDomains) {
         WebView(context).apply {
@@ -313,6 +315,22 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             factory = { webView },
             modifier = Modifier.fillMaxSize()
         )
+        Box(
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.88f))
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            ReaderControls(
+                previousChapter = previousChapter,
+                nextChapter = nextChapter,
+                enabled = !viewModel.isLoading,
+                onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                onChapterList = viewModel::back,
+                onNext = { nextChapter?.let(viewModel::openChapter) }
+            )
+        }
         pageError?.let { message ->
             Card(
                 modifier = Modifier
