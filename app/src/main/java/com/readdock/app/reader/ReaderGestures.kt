@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +25,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -41,9 +45,11 @@ fun ZoomableReaderImage(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     onPreviousPage: () -> Unit = {},
-    onNextPage: () -> Unit = {}
+    onNextPage: () -> Unit = {},
+    onSingleTap: () -> Unit = {}
 ) {
     val density = LocalDensity.current
+    val tapScope = rememberCoroutineScope()
     val touchSlop = with(density) { 18.dp.toPx() }
     val swipeThreshold = with(density) { 64.dp.toPx() }
     var scale by remember(pageKey) { mutableStateOf(MIN_SCALE) }
@@ -57,7 +63,9 @@ fun ZoomableReaderImage(
             .background(Color.Black)
             .onSizeChanged { containerSize = it }
             .pointerInput(pageKey, touchSlop, swipeThreshold) {
-                awaitEachGesture {
+                var pendingTap: Job? = null
+                try {
+                    awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val pointerId = down.id
                     val start = down.position
@@ -87,6 +95,7 @@ fun ZoomableReaderImage(
                                     previousPosition != Offset.Unspecified &&
                                     (previousPosition - end).getDistance() <= 48f
                                 ) {
+                                    pendingTap?.cancel()
                                     if (scale > MIN_SCALE) {
                                         scale = MIN_SCALE
                                         offset = Offset.Zero
@@ -109,8 +118,17 @@ fun ZoomableReaderImage(
                                     lastTapTime = 0L
                                     lastTapPosition = Offset.Unspecified
                                 } else {
+                                    pendingTap?.cancel()
                                     lastTapTime = now
                                     lastTapPosition = end
+                                    pendingTap = tapScope.launch {
+                                        delay(DOUBLE_TAP_TIMEOUT_MS)
+                                        if (lastTapTime == now) {
+                                            lastTapTime = 0L
+                                            lastTapPosition = Offset.Unspecified
+                                            onSingleTap()
+                                        }
+                                    }
                                 }
                             }
                             break
@@ -175,6 +193,9 @@ fun ZoomableReaderImage(
                             change.consume()
                         }
                     }
+                    }
+                } finally {
+                    pendingTap?.cancel()
                 }
             },
         contentAlignment = androidx.compose.ui.Alignment.Center

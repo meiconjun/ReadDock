@@ -35,6 +35,34 @@ class PluginRepositoryTest {
     }
 
     @Test
+    fun `parses optional plugin safety metadata`() {
+        val parsed = PluginRepositoryIndexLoader().parse(
+            """
+                {
+                  "schemaVersion": 1,
+                  "repositoryId": "fixture",
+                  "plugins": [{
+                    "id": "com.example.remote",
+                    "name": "Remote",
+                    "version": "1.0.0",
+                    "downloadUrl": "https://example.com/plugin.json",
+                    "sha256": "${"a".repeat(64)}",
+                    "domains": ["example.com"],
+                    "capabilities": ["search", "pages"],
+                    "permissions": ["network"]
+                  }]
+                }
+            """.trimIndent()
+        )
+
+        val entry = assertIs<PluginRepositoryParseResult.Success>(parsed).index.plugins.single()
+        assertEquals(listOf("example.com"), entry.domains)
+        assertEquals(setOf(com.readdock.source.api.SourceCapability.SEARCH,
+            com.readdock.source.api.SourceCapability.PAGES), entry.capabilities)
+        assertEquals(setOf(com.readdock.source.api.PluginPermission.NETWORK), entry.permissions)
+    }
+
+    @Test
     fun `rejects insecure repository entries`() {
         val result = PluginRepositoryIndexLoader().parse(
             """

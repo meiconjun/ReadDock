@@ -19,21 +19,34 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.detectTapGestures
 import com.readdock.app.reader.ZoomableReaderImage
+import kotlin.math.roundToInt
 
 @Composable
-fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
+fun LocalReaderScreen(
+    comicId: String,
+    padding: PaddingValues,
+    chromeVisible: Boolean,
+    onToggleChrome: () -> Unit
+) {
     val context = LocalContext.current
     val viewModel: LocalReaderViewModel = viewModel(
         key = "local-reader-$comicId",
@@ -64,21 +77,40 @@ fun LocalReaderScreen(comicId: String, padding: PaddingValues) {
                 Button(onClick = viewModel::retry) { Text("重新读取") }
             }
             LocalReaderStatus.SUCCESS -> {
-                ReaderPageHeader(state)
+                var sliderPage by remember(state.comic?.id) {
+                    mutableStateOf(state.currentPage.toFloat())
+                }
+                var sliderDragging by remember(state.comic?.id) { mutableStateOf(false) }
+                LaunchedEffect(state.currentPage, sliderDragging) {
+                    if (!sliderDragging) sliderPage = state.currentPage.toFloat()
+                }
+                if (chromeVisible) {
+                    ReaderPageHeader(state)
+                }
                 ReaderPageContent(
                     state = state,
                     onRetry = viewModel::retry,
                     onPreviousPage = viewModel::previousPage,
-                    onNextPage = viewModel::nextPage
+                    onNextPage = viewModel::nextPage,
+                    onToggleChrome = onToggleChrome
                 )
-                ReaderPageControls(
-                    currentPage = state.currentPage,
-                    pageCount = state.pageCount,
-                    previousEnabled = state.canGoPrevious,
-                    nextEnabled = state.canGoNext,
-                    onPrevious = viewModel::previousPage,
-                    onNext = viewModel::nextPage
-                )
+                if (chromeVisible) ReaderPageControls(
+                        currentPage = state.currentPage,
+                        pageCount = state.pageCount,
+                        sliderPage = sliderPage,
+                        previousEnabled = state.canGoPrevious,
+                        nextEnabled = state.canGoNext,
+                        onPrevious = viewModel::previousPage,
+                        onNext = viewModel::nextPage,
+                        onSliderChange = {
+                            sliderDragging = true
+                            sliderPage = it
+                        },
+                        onSliderFinished = {
+                            sliderDragging = false
+                            viewModel.goToPage(sliderPage.roundToInt())
+                        }
+                    )
             }
         }
     }
@@ -112,7 +144,8 @@ private fun ColumnScope.ReaderPageContent(
     state: LocalReaderState,
     onRetry: () -> Unit,
     onPreviousPage: () -> Unit,
-    onNextPage: () -> Unit
+    onNextPage: () -> Unit,
+    onToggleChrome: () -> Unit
 ) {
     val content = state.content
     Box(
@@ -123,14 +156,23 @@ private fun ColumnScope.ReaderPageContent(
         contentAlignment = Alignment.Center
     ) {
         when {
-            state.isPageLoading -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            state.isPageLoading -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.pointerInput(state.currentPage) {
+                    detectTapGestures(onTap = { onToggleChrome() })
+                }
+            ) {
                 CircularProgressIndicator(color = Color.White)
                 Spacer(Modifier.height(12.dp))
                 Text("正在加载第 ${state.currentPage} 页…", color = Color.White)
             }
             state.pageErrorMessage != null -> Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier
+                    .padding(24.dp)
+                    .pointerInput(state.currentPage) {
+                        detectTapGestures(onTap = { onToggleChrome() })
+                    }
             ) {
                 Text(state.pageErrorMessage, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(12.dp))
@@ -142,15 +184,25 @@ private fun ColumnScope.ReaderPageContent(
                 contentDescription = "第 ${state.currentPage} 页",
                 modifier = Modifier.fillMaxSize(),
                 onPreviousPage = onPreviousPage,
-                onNextPage = onNextPage
+                onNextPage = onNextPage,
+                onSingleTap = onToggleChrome
             )
             content?.text != null -> Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .pointerInput(state.comic?.id) {
+                        detectTapGestures(onTap = { onToggleChrome() })
+                    }
                     .padding(16.dp)
             ) { Text(content.text, color = Color.White) }
-            else -> Text("当前页面没有可显示的内容", color = MaterialTheme.colorScheme.error)
+            else -> Text(
+                "当前页面没有可显示的内容",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.pointerInput(state.currentPage) {
+                    detectTapGestures(onTap = { onToggleChrome() })
+                }
+            )
         }
     }
 }
@@ -159,31 +211,46 @@ private fun ColumnScope.ReaderPageContent(
 private fun ReaderPageControls(
     currentPage: Int,
     pageCount: Int,
+    sliderPage: Float,
     previousEnabled: Boolean,
     nextEnabled: Boolean,
     onPrevious: () -> Unit,
-    onNext: () -> Unit
+    onNext: () -> Unit,
+    onSliderChange: (Float) -> Unit,
+    onSliderFinished: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val buttonColors = ButtonDefaults.textButtonColors(
-            contentColor = Color.White,
-            disabledContentColor = Color(0xFF666666)
-        )
-        TextButton(
-            onClick = onPrevious,
-            enabled = previousEnabled,
-            colors = buttonColors
-        ) { Text("上一页") }
-        Text("$currentPage / $pageCount", color = Color.LightGray)
-        TextButton(
-            onClick = onNext,
-            enabled = nextEnabled,
-            colors = buttonColors
-        ) { Text("下一页") }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        if (pageCount > 1) {
+            Slider(
+                value = sliderPage.coerceIn(1f, pageCount.toFloat()),
+                onValueChange = onSliderChange,
+                onValueChangeFinished = onSliderFinished,
+                valueRange = 1f..pageCount.toFloat(),
+                steps = (pageCount - 2).coerceAtLeast(0),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val buttonColors = ButtonDefaults.textButtonColors(
+                contentColor = Color.White,
+                disabledContentColor = Color(0xFF666666)
+            )
+            TextButton(
+                onClick = onPrevious,
+                enabled = previousEnabled,
+                colors = buttonColors
+            ) { Text("上一页") }
+            Text("$currentPage / $pageCount", color = Color.LightGray)
+            TextButton(
+                onClick = onNext,
+                enabled = nextEnabled,
+                colors = buttonColors
+            ) { Text("下一页") }
+        }
     }
 }
 

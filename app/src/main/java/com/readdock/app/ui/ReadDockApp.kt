@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.readdock.app.AppScreen
 import com.readdock.app.MainActivity
 import com.readdock.app.MainViewModel
@@ -114,13 +116,25 @@ fun ReadDockApp() {
         }
     }
 
-    DisposableEffect(activity, viewModel.screen) {
+    DisposableEffect(activity, viewModel.screen, viewModel.readerChromeVisible) {
         val window = activity?.window
         val previousNavigationBarColor = window?.navigationBarColor
-        if (viewModel.screen == AppScreen.READER || viewModel.screen == AppScreen.LOCAL_READER) {
+        val isReader = viewModel.screen == AppScreen.READER || viewModel.screen == AppScreen.LOCAL_READER
+        val isImmersiveLocalReader = viewModel.screen == AppScreen.LOCAL_READER &&
+            !viewModel.readerChromeVisible
+        val insetsController = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+        if (isReader) {
             window?.navigationBarColor = Color.Black.toArgb()
         }
+        if (isImmersiveLocalReader) {
+            insetsController?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController?.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            insetsController?.show(WindowInsetsCompat.Type.systemBars())
+        }
         onDispose {
+            insetsController?.show(WindowInsetsCompat.Type.systemBars())
             previousNavigationBarColor?.let { color ->
                 window?.navigationBarColor = color
             }
@@ -131,7 +145,8 @@ fun ReadDockApp() {
         topBar = {
             if (viewModel.screen != AppScreen.SEARCH &&
                 viewModel.screen != AppScreen.LIBRARY &&
-                viewModel.screen != AppScreen.SOURCES
+                viewModel.screen != AppScreen.SOURCES &&
+                (viewModel.screen != AppScreen.LOCAL_READER || viewModel.readerChromeVisible)
             ) {
                 val isComicReader = viewModel.screen == AppScreen.READER ||
                     viewModel.screen == AppScreen.LOCAL_READER
@@ -197,7 +212,12 @@ fun ReadDockApp() {
             AppScreen.DETAIL -> DetailScreen(viewModel, savedIds, padding)
             AppScreen.READER -> ReaderScreen(viewModel, padding)
             AppScreen.LOCAL_READER -> viewModel.selectedLocalComicId?.let { id ->
-                LocalReaderScreen(comicId = id, padding = padding)
+                LocalReaderScreen(
+                    comicId = id,
+                    padding = padding,
+                    chromeVisible = viewModel.readerChromeVisible,
+                    onToggleChrome = viewModel::toggleReaderChrome
+                )
             } ?: ErrorNotice("没有选择本地漫画")
         }
     }
@@ -577,16 +597,88 @@ private fun SourcesScreen(
             value = viewModel.repositoryPublicKey,
             onValueChange = viewModel::updateRepositoryPublicKey,
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            minLines = 2,
+            maxLines = 4,
             label = { Text("RSA 公钥 Base64") }
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = viewModel::refreshRepository) {
-            Text("检查更新")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = viewModel::refreshRepository,
+                enabled = !viewModel.repositoryBusy
+            ) {
+                Text("读取仓库")
+            }
+            TextButton(onClick = viewModel::clearRepositoryConfiguration) {
+                Text("清除配置")
+            }
+            if (viewModel.repositoryBusy) {
+                TextButton(onClick = viewModel::cancelRepositoryOperation) {
+                    Text("取消")
+                }
+            }
         }
         viewModel.repositoryMessage?.let {
             Spacer(Modifier.height(6.dp))
             InlineMessage(it)
+        }
+        if (viewModel.repositoryIndex != null) {
+            Spacer(Modifier.height(16.dp))
+            Text("仓库插件", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(8.dp))
+            if (viewModel.repositoryPlugins.isEmpty()) {
+                Text(
+                    "仓库当前没有可用插件。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val installedById = viewModel.installedPlugins.associateBy { it.id }
+                viewModel.repositoryPlugins.forEach { entry ->
+                    val installed = installedById[entry.id]
+                    val hasUpdate = viewModel.availableUpdates.any { it.available.id == entry.id }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(entry.name) },
+                            supportingContent = {
+                                Column {
+                                    Text("${entry.id} · v${entry.version}")
+                                    entry.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
+                                    if (entry.domains.isNotEmpty()) {
+                                        Text("域名：${entry.domains.joinToString("、")}")
+                                    }
+                                    if (entry.permissions.isNotEmpty()) {
+                                        Text(
+                                            "权限：${entry.permissions.joinToString("、") { it.name.lowercase() }}"
+                                        )
+                                    }
+                                    if (entry.capabilities.isNotEmpty()) {
+                                        Text(
+                                            "能力：${entry.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                        )
+                                    }
+                                }
+                            },
+                            trailingContent = {
+                                TextButton(
+                                    onClick = { viewModel.installRepositoryPlugin(entry) },
+                                    enabled = !viewModel.repositoryBusy &&
+                                        (installed == null || hasUpdate)
+                                ) {
+                                    Text(if (installed == null) "安装" else if (hasUpdate) "更新" else "已安装")
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
         if (viewModel.availableUpdates.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
@@ -653,7 +745,7 @@ private fun SourcesScreen(
         Spacer(Modifier.height(8.dp))
         if (viewModel.installedPlugins.isEmpty()) {
             Text(
-                "还没有安装插件。可以导入 plugin-sdk/package.example.json。",
+                "还没有安装插件。请从受信任的外部仓库安装，或导入带签名的插件包。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
@@ -665,8 +757,32 @@ private fun SourcesScreen(
                 items(viewModel.installedPlugins, key = { it.id }) { plugin ->
                     Card(modifier = Modifier.fillMaxWidth()) {
                         ListItem(
-                            headlineContent = { Text(plugin.name) },
-                            supportingContent = { Text("${plugin.id} · v${plugin.version}") },
+                        headlineContent = { Text(plugin.name) },
+                            supportingContent = {
+                                Column {
+                                    Text("${plugin.id} · v${plugin.version}")
+                                    if (plugin.domains.isNotEmpty()) {
+                                        Text("域名：${plugin.domains.joinToString("、")}")
+                                    }
+                                    if (plugin.permissions.isNotEmpty()) {
+                                        Text(
+                                            "权限：${plugin.permissions.joinToString("、") { it.name.lowercase() }}"
+                                        )
+                                    }
+                                    if (plugin.capabilities.isNotEmpty()) {
+                                        Text(
+                                            "能力：${plugin.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                        )
+                                    }
+                                    Text(
+                                        "限速：${plugin.rateLimit.requestsPerMinute}/分钟，" +
+                                            "并发 ${plugin.rateLimit.concurrency}"
+                                    )
+                                    if (plugin.requiresUserInteraction) {
+                                        Text("需要用户交互")
+                                    }
+                                }
+                            },
                             trailingContent = {
                                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                     Switch(

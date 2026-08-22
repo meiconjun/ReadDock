@@ -1,6 +1,9 @@
 package com.readdock.source.runtime
 
 import com.readdock.source.api.ComicSource
+import com.readdock.source.api.PluginPermission
+import com.readdock.source.api.SourceCapability
+import com.readdock.source.api.RateLimit
 import com.readdock.source.api.SourceManifest
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
@@ -12,7 +15,12 @@ data class InstalledPluginInfo(
     val name: String,
     val version: String,
     val enabled: Boolean,
-    val canRollback: Boolean = false
+    val canRollback: Boolean = false,
+    val domains: List<String> = emptyList(),
+    val capabilities: Set<SourceCapability> = emptySet(),
+    val permissions: Set<PluginPermission> = emptySet(),
+    val rateLimit: RateLimit = RateLimit(),
+    val requiresUserInteraction: Boolean = false
 )
 
 sealed interface PluginStoreResult {
@@ -164,7 +172,12 @@ class LocalPluginStore(
         name = manifest.name,
         version = manifest.version,
         enabled = !disabledFile(manifest.id).exists(),
-        canRollback = historyFiles(manifest.id).isNotEmpty()
+        canRollback = historyFiles(manifest.id).isNotEmpty(),
+        domains = manifest.domains,
+        capabilities = manifest.capabilities,
+        permissions = manifest.permissions,
+        rateLimit = manifest.rateLimit,
+        requiresUserInteraction = manifest.requiresUserInteraction
     )
 
     private fun packageFile(id: String): File = File(directory, "$id.json")

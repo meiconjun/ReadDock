@@ -36,6 +36,8 @@ import com.readdock.source.runtime.NetworkRequest
 import com.readdock.source.runtime.NetworkRequestPolicy
 import com.readdock.source.runtime.PluginPackageLoader
 import com.readdock.source.runtime.PluginRepositoryClient
+import com.readdock.source.runtime.PluginIndexEntry
+import com.readdock.source.runtime.PluginRepositoryIndex
 import com.readdock.source.runtime.PluginRepositoryIndexLoader
 import com.readdock.source.runtime.PluginStoreResult
 import com.readdock.source.runtime.PluginSignatureVerifier
@@ -123,6 +125,8 @@ class MainViewModel(
     private var navigationJob: Job? = null
     private var localImportJob: Job? = null
     private var localDeleteJob: Job? = null
+    private var repositoryJob: Job? = null
+    private var repositoryOperationGeneration = 0L
     private var readerGeneration = 0L
     private var readerProgressJob: Job? = null
     private val readerProgressMutex = Mutex()
@@ -179,6 +183,12 @@ class MainViewModel(
         private set
     var repositoryMessage by mutableStateOf<UiMessage?>(null)
         private set
+    var repositoryPlugins by mutableStateOf<List<PluginIndexEntry>>(emptyList())
+        private set
+    var repositoryIndex by mutableStateOf<PluginRepositoryIndex?>(null)
+        private set
+    var repositoryBusy by mutableStateOf(false)
+        private set
     var availableUpdates by mutableStateOf<List<PluginUpdate>>(emptyList())
         private set
     var selectedDetail by mutableStateOf<ComicDetail?>(null)
@@ -205,6 +215,8 @@ class MainViewModel(
     var localImportState by mutableStateOf(LocalImportUiState())
         private set
     var selectedLocalComicId by mutableStateOf<String?>(null)
+        private set
+    var readerChromeVisible by mutableStateOf(true)
         private set
     var isSaving by mutableStateOf(false)
         private set
@@ -293,6 +305,7 @@ class MainViewModel(
         if (screen == AppScreen.READER && selectedChapter?.id == chapter.id && !isLoading) return
         navigationJob?.cancel()
         val generation = beginReaderSession()
+        readerChromeVisible = true
         selectedChapter = chapter
         pages = emptyList()
         readerProgressLoaded = false
@@ -495,9 +508,14 @@ class MainViewModel(
     fun openLocalComic(comic: LocalComic) {
         if (localDeleteJob?.isActive == true) return
         selectedLocalComicId = comic.id
+        readerChromeVisible = true
         errorMessage = null
         actionMessage = null
         navigateTo(AppScreen.LOCAL_READER)
+    }
+
+    fun toggleReaderChrome() {
+        readerChromeVisible = !readerChromeVisible
     }
 
     fun deleteLocalComic(comic: LocalComic) {
@@ -562,10 +580,16 @@ class MainViewModel(
 
     fun installPlugin(packageJson: String) {
         viewModelScope.launch {
-            when (val result = pluginStore.install(packageJson)) {
+            if (createSignatureVerifier() == null) {
+                pluginMessage = failureMessage("插件未安装：导入外部插件前，请先配置可信公钥")
+                return@launch
+            }
+            val loader = securePluginLoader()
+            when (val result = pluginStore.install(packageJson, loader)) {
                 is PluginStoreResult.Installed -> {
                     pluginMessage = infoMessage("已安装：${result.plugin.name}")
                     reloadPluginSources()
+                    recomputeRepositoryUpdates()
                     performSearch(query, page = 1, append = false)
                 }
                 is PluginStoreResult.Rejected -> {
@@ -586,6 +610,7 @@ class MainViewModel(
             pluginStore.setEnabled(id, enabled)
             pluginMessage = infoMessage(if (enabled) "插件已启用" else "插件已停用")
             reloadPluginSources()
+            recomputeRepositoryUpdates()
             performSearch(query, page = 1, append = false)
         }
     }
@@ -598,6 +623,7 @@ class MainViewModel(
                 else -> pluginMessage = failureMessage("插件卸载失败")
             }
             reloadPluginSources()
+            recomputeRepositoryUpdates()
             performSearch(query, page = 1, append = false)
         }
     }
@@ -608,6 +634,7 @@ class MainViewModel(
                 is PluginStoreResult.RolledBack -> {
                     pluginMessage = infoMessage("已回滚到 ${result.plugin.version}")
                     reloadPluginSources()
+                    recomputeRepositoryUpdates()
                     performSearch(query, page = 1, append = false)
                 }
                 is PluginStoreResult.NoRollback -> pluginMessage = failureMessage("没有可用的历史版本")
@@ -628,12 +655,32 @@ class MainViewModel(
         repositoryPublicKey = value
     }
 
+    fun clearRepositoryConfiguration() {
+        repositoryJob?.cancel()
+        repositoryOperationGeneration += 1
+        repositoryPreferences.edit().clear().apply()
+        repositoryUrl = ""
+        repositoryKeyId = ""
+        repositoryPublicKey = ""
+        repositoryIndex = null
+        repositoryPlugins = emptyList()
+        availableUpdates = emptyList()
+        repositoryBusy = false
+        repositoryMessage = infoMessage("已清除外部插件仓库配置")
+    }
+
     fun refreshRepository() {
+        repositoryJob?.cancel()
+        repositoryJob = null
+        repositoryOperationGeneration += 1
+        repositoryBusy = false
         repositoryPreferences.edit()
             .putString("url", repositoryUrl)
             .putString("key_id", repositoryKeyId)
             .putString("public_key", repositoryPublicKey)
             .apply()
+        repositoryIndex = null
+        repositoryPlugins = emptyList()
         availableUpdates = emptyList()
         val url = repositoryUrl.trim()
         val client = createRepositoryClient()
@@ -645,59 +692,116 @@ class MainViewModel(
             repositoryMessage = failureMessage("请先配置仓库 keyId 和 RSA 公钥")
             return
         }
-        viewModelScope.launch {
+        val generation = repositoryOperationGeneration
+        repositoryBusy = true
+        repositoryJob = viewModelScope.launch {
             repositoryMessage = infoMessage("正在检查仓库更新…")
-            when (val result = client.fetchIndex(url)) {
-                is com.readdock.source.runtime.RepositoryClientResult.IndexReady -> {
-                    availableUpdates = client.indexUpdates(result.index)
-                    repositoryMessage = infoMessage(if (availableUpdates.isEmpty()) {
-                        "仓库检查完成，没有可用更新"
-                    } else {
-                        "发现 ${availableUpdates.size} 个更新"
-                    })
+            try {
+                when (val result = client.fetchIndex(url)) {
+                    is com.readdock.source.runtime.RepositoryClientResult.IndexReady -> {
+                        repositoryIndex = result.index
+                        repositoryPlugins = result.index.plugins
+                        availableUpdates = client.indexUpdates(result.index)
+                        repositoryMessage = infoMessage(
+                            if (availableUpdates.isEmpty()) {
+                                "仓库检查完成，发现 ${repositoryPlugins.size} 个插件"
+                            } else {
+                                "发现 ${repositoryPlugins.size} 个插件和 ${availableUpdates.size} 个更新"
+                            }
+                        )
+                    }
+                    is com.readdock.source.runtime.RepositoryClientResult.Failure -> {
+                        repositoryMessage = failureMessage(result.message)
+                    }
+                    is com.readdock.source.runtime.RepositoryClientResult.PluginReady -> {
+                        repositoryMessage = failureMessage("仓库返回了插件包而不是索引")
+                    }
                 }
-                is com.readdock.source.runtime.RepositoryClientResult.Failure -> {
-                    repositoryMessage = failureMessage(result.message)
-                }
-                is com.readdock.source.runtime.RepositoryClientResult.PluginReady -> {
-                    repositoryMessage = failureMessage("仓库返回了插件包而不是索引")
-                }
+            } catch (error: CancellationException) {
+                throw error
+            } finally {
+                if (generation == repositoryOperationGeneration) repositoryBusy = false
             }
         }
     }
 
-    fun installUpdate(update: PluginUpdate) {
+    fun cancelRepositoryOperation() {
+        if (!repositoryBusy) return
+        repositoryOperationGeneration += 1
+        repositoryJob?.cancel()
+        repositoryJob = null
+        repositoryBusy = false
+        repositoryMessage = infoMessage("仓库操作已取消")
+    }
+
+    fun installRepositoryPlugin(entry: PluginIndexEntry) {
         val client = createRepositoryClient()
         if (client == null) {
             repositoryMessage = failureMessage("请先配置可信公钥")
             return
         }
-        viewModelScope.launch {
-            repositoryMessage = infoMessage("正在下载 ${update.available.name}…")
-            when (val result = client.downloadPlugin(update.available)) {
-                is com.readdock.source.runtime.RepositoryClientResult.PluginReady -> {
-                    when (val installed = pluginStore.install(result.packageJson, securePluginLoader())) {
-                        is PluginStoreResult.Installed -> {
-                            repositoryMessage = infoMessage("已安装 ${installed.plugin.name}")
-                            reloadPluginSources()
-                            performSearch(query, page = 1, append = false)
+        repositoryJob?.cancel()
+        repositoryOperationGeneration += 1
+        val generation = repositoryOperationGeneration
+        repositoryBusy = true
+        repositoryJob = viewModelScope.launch {
+            repositoryMessage = infoMessage("正在下载 ${entry.name}…")
+            try {
+                when (val result = client.downloadPlugin(entry)) {
+                    is com.readdock.source.runtime.RepositoryClientResult.PluginReady -> {
+                        when (val parsed = securePluginLoader().parse(result.packageJson)) {
+                            is com.readdock.source.runtime.PluginParseResult.Failure -> {
+                                repositoryMessage = failureMessage(
+                                    "插件签名或格式校验失败：${parsed.errors.joinToString("；")}"
+                                )
+                            }
+                            is com.readdock.source.runtime.PluginParseResult.Success -> {
+                                val manifest = parsed.definition.manifest
+                                if (manifest.id != entry.id || manifest.version != entry.version) {
+                                    repositoryMessage = failureMessage(
+                                        "插件包身份与仓库索引不一致，已拒绝安装"
+                                    )
+                                } else {
+                                    when (val installed = pluginStore.install(
+                                        result.packageJson,
+                                        securePluginLoader()
+                                    )) {
+                                        is PluginStoreResult.Installed -> {
+                                            repositoryMessage = infoMessage(
+                                                "已安装：${installed.plugin.name} v${installed.plugin.version}"
+                                            )
+                                            reloadPluginSources()
+                                            recomputeRepositoryUpdates()
+                                            performSearch(query, page = 1, append = false)
+                                        }
+                                        is PluginStoreResult.Rejected -> {
+                                            repositoryMessage = failureMessage(
+                                                "插件安装失败：${installed.errors.joinToString("；")}"
+                                            )
+                                        }
+                                        else -> repositoryMessage = failureMessage("插件安装失败")
+                                    }
+                                }
+                            }
                         }
-                        is PluginStoreResult.Rejected -> {
-                            repositoryMessage = failureMessage(
-                                "签名校验失败：${installed.errors.joinToString("；")}"
-                            )
-                        }
-                        else -> repositoryMessage = failureMessage("插件安装失败")
+                    }
+                    is com.readdock.source.runtime.RepositoryClientResult.Failure -> {
+                        repositoryMessage = failureMessage(result.message)
+                    }
+                    is com.readdock.source.runtime.RepositoryClientResult.IndexReady -> {
+                        repositoryMessage = failureMessage("仓库返回了索引而不是插件包")
                     }
                 }
-                is com.readdock.source.runtime.RepositoryClientResult.Failure -> {
-                    repositoryMessage = failureMessage(result.message)
-                }
-                is com.readdock.source.runtime.RepositoryClientResult.IndexReady -> {
-                    repositoryMessage = failureMessage("仓库返回了索引而不是插件包")
-                }
+            } catch (error: CancellationException) {
+                throw error
+            } finally {
+                if (generation == repositoryOperationGeneration) repositoryBusy = false
             }
         }
+    }
+
+    fun installUpdate(update: PluginUpdate) {
+        installRepositoryPlugin(update.available)
     }
 
     fun showSearch() {
@@ -716,6 +820,9 @@ class MainViewModel(
         if (backStack.size <= 1) return
         navigationJob?.cancel()
         navigationJob = null
+        if (screen == AppScreen.READER || screen == AppScreen.LOCAL_READER) {
+            readerChromeVisible = true
+        }
         if (screen == AppScreen.READER) {
             invalidateReaderSession()
         }
@@ -864,6 +971,12 @@ class MainViewModel(
     private fun PluginRepositoryClient.indexUpdates(
         index: com.readdock.source.runtime.PluginRepositoryIndex
     ): List<PluginUpdate> = PluginRepositoryIndexLoader().updates(index, pluginStore.list())
+
+    private fun recomputeRepositoryUpdates() {
+        repositoryIndex?.let { index ->
+            availableUpdates = PluginRepositoryIndexLoader().updates(index, pluginStore.list())
+        }
+    }
 
     override fun onCleared() {
         invalidateReaderSession()

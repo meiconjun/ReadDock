@@ -1,5 +1,7 @@
 package com.readdock.source.runtime
 
+import com.readdock.source.api.PluginPermission
+import com.readdock.source.api.SourceCapability
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -17,7 +19,10 @@ data class PluginIndexEntry(
     val version: String,
     val downloadUrl: String,
     val sha256: String,
-    val description: String? = null
+    val description: String? = null,
+    val domains: List<String> = emptyList(),
+    val capabilities: Set<SourceCapability> = emptySet(),
+    val permissions: Set<PluginPermission> = emptySet()
 )
 
 data class PluginUpdate(
