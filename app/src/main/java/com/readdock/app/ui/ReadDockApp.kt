@@ -1,8 +1,6 @@
 package com.readdock.app.ui
 
 import android.annotation.SuppressLint
-import android.view.MotionEvent
-import android.view.ViewConfiguration
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -261,33 +259,9 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             settings.userAgentString = WebSettings.getDefaultUserAgent(context)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-            var downX = 0f
-            var downY = 0f
-            var moved = false
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downX = event.x
-                        downY = event.y
-                        moved = false
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.x - downX) > touchSlop ||
-                            kotlin.math.abs(event.y - downY) > touchSlop
-                        ) {
-                            moved = true
-                        }
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) viewModel.toggleReaderChrome()
-                    }
-                    MotionEvent.ACTION_CANCEL -> moved = true
-                }
-                // Let WebView keep handling scrolling, links and the normal
-                // security-check interaction after we observe the tap.
-                false
-            }
+            // WebView keeps handling scrolling and links; its click callback
+            // is only invoked for a completed tap, so a swipe remains a swipe.
+            setOnClickListener { viewModel.toggleReaderChrome() }
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, pageUrl: String, favicon: android.graphics.Bitmap?) {
                     super.onPageStarted(view, pageUrl, favicon)
@@ -361,14 +335,27 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     .background(Color.Black.copy(alpha = 0.88f))
                     .padding(horizontal = 8.dp, vertical = 2.dp)
             ) {
-                ReaderControls(
-                    previousChapter = previousChapter,
-                    nextChapter = nextChapter,
-                    enabled = !viewModel.isLoading && !pageLoading,
-                    onPrevious = { previousChapter?.let(viewModel::openChapter) },
-                    onChapterList = viewModel::back,
-                    onNext = { nextChapter?.let(viewModel::openChapter) }
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ReaderControls(
+                        previousChapter = previousChapter,
+                        nextChapter = nextChapter,
+                        enabled = !viewModel.isLoading && !pageLoading,
+                        onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                        onChapterList = viewModel::back,
+                        onNext = { nextChapter?.let(viewModel::openChapter) }
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TextButton(
+                            onClick = viewModel::toggleReaderChrome,
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        ) {
+                            Text("隐藏界面")
+                        }
+                    }
+                }
             }
         }
         if (viewModel.readerChromeVisible && (viewModel.isLoading || pageLoading)) {
