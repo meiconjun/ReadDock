@@ -304,9 +304,13 @@ Create a distributable package with `comic-source package . dist/$id.json`.
     }
 
     private fun fixtureFor(url: String, search: File, detail: File, pages: File): File {
-        val path = URI(url).path.orEmpty()
+        val uri = URI(url)
+        val path = uri.path.orEmpty()
+        val queryKeys = uri.rawQuery.orEmpty()
+            .split('&')
+            .mapNotNull { part -> part.substringBefore('=').takeIf { it.isNotBlank() } }
         return when {
-            path.contains("search") -> search
+            path.contains("search") || queryKeys.any { it == "q" || it == "query" } -> search
             path.contains("chapter") || path.contains("page") -> pages
             else -> detail
         }

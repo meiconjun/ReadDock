@@ -21,6 +21,23 @@ class CliTest {
     }
 
     @Test
+    fun `query based search routes use the search fixture`() {
+        val root = Files.createTempDirectory("readdock-cli-query-search-").toFile()
+        val pluginDir = root.resolve("fixture-source")
+        val output = StringBuilder()
+        val errors = StringBuilder()
+
+        assertEquals(0, Cli.run(listOf("init", pluginDir.path), output, errors))
+        pluginDir.resolve("package.json").writeText(
+            pluginDir.resolve("package.json").readText().replace("/search?q=", "/comics?q=")
+        )
+
+        assertEquals(0, Cli.run(listOf("test", pluginDir.path), output, errors))
+        assertTrue(output.toString().contains("fixture 通过"), output.toString())
+        assertEquals("", errors.toString())
+    }
+
+    @Test
     fun `fixture expectations fail when a snapshot changes unexpectedly`() {
         val root = Files.createTempDirectory("readdock-cli-fixture-contract-").toFile()
         val pluginDir = root.resolve("source")
