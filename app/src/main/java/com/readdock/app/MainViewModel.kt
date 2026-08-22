@@ -67,6 +67,7 @@ enum class AppScreen {
     SEARCH,
     DETAIL,
     READER,
+    WEB_READER,
     LOCAL_READER,
     LIBRARY,
     SOURCES
@@ -197,6 +198,10 @@ class MainViewModel(
         private set
     var selectedChapter by mutableStateOf<Chapter?>(null)
         private set
+    var webReaderUrl by mutableStateOf<String?>(null)
+        private set
+    var webReaderAllowedDomains by mutableStateOf<Set<String>>(emptySet())
+        private set
     var pages by mutableStateOf<List<ComicPage>>(emptyList())
         private set
     private var readerRetryVersions by mutableStateOf<Map<String, Int>>(emptyMap())
@@ -302,7 +307,10 @@ class MainViewModel(
     }
 
     fun openChapter(chapter: Chapter) {
-        if (screen == AppScreen.READER && selectedChapter?.id == chapter.id && !isLoading) return
+        if ((screen == AppScreen.READER || screen == AppScreen.WEB_READER) &&
+            selectedChapter?.id == chapter.id &&
+            !isLoading
+        ) return
         navigationJob?.cancel()
         val generation = beginReaderSession()
         readerChromeVisible = true
@@ -321,6 +329,24 @@ class MainViewModel(
                     "章节不属于当前漫画，无法打开"
                 }
                 val source = registry.require(chapter.sourceId)
+                if (source.manifest.requiresUserInteraction) {
+                    require(isAllowedInteractiveUrl(chapter.id, source.manifest.domains)) {
+                        "交互式阅读地址不在插件声明的域名范围内"
+                    }
+                    selectedChapter = chapter
+                    webReaderUrl = chapter.id
+                    webReaderAllowedDomains = source.manifest.domains
+                        .map(String::lowercase)
+                        .toSet()
+                    navigateTo(AppScreen.WEB_READER)
+                    try {
+                        library.saveComic(detail)
+                    } catch (storageError: Throwable) {
+                        errorMessage = "漫画信息保存失败，请稍后重试"
+                    }
+                    if (generation == readerGeneration) isLoading = false
+                    return@launch
+                }
                 val loadedPages = source.pages(chapter.id)
                 if (generation != readerGeneration) return@launch
                 selectedChapter = chapter
@@ -820,10 +846,12 @@ class MainViewModel(
         if (backStack.size <= 1) return
         navigationJob?.cancel()
         navigationJob = null
-        if (screen == AppScreen.READER || screen == AppScreen.LOCAL_READER) {
+        if (screen == AppScreen.READER || screen == AppScreen.WEB_READER ||
+            screen == AppScreen.LOCAL_READER
+        ) {
             readerChromeVisible = true
         }
-        if (screen == AppScreen.READER) {
+        if (screen == AppScreen.READER || screen == AppScreen.WEB_READER) {
             invalidateReaderSession()
         }
         isLoading = false
@@ -866,6 +894,16 @@ class MainViewModel(
         onlineImageLoader.clearMemory()
         readerRetryVersions = emptyMap()
         readerProgressJob?.cancel()
+        webReaderUrl = null
+        webReaderAllowedDomains = emptySet()
+    }
+
+    private fun isAllowedInteractiveUrl(url: String, domains: Collection<String>): Boolean {
+        val host = Uri.parse(url).host?.lowercase() ?: return false
+        return domains.any { domain ->
+            val normalized = domain.trim().lowercase()
+            normalized.isNotBlank() && (host == normalized || host.endsWith(".$normalized"))
+        }
     }
 
     private suspend fun reloadPluginSources() {
