@@ -1,6 +1,8 @@
 package com.readdock.app.ui
 
 import android.annotation.SuppressLint
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -132,13 +134,14 @@ fun ReadDockApp() {
         val isReader = viewModel.screen == AppScreen.READER ||
             viewModel.screen == AppScreen.WEB_READER ||
             viewModel.screen == AppScreen.LOCAL_READER
-        val isImmersiveLocalReader = viewModel.screen == AppScreen.LOCAL_READER &&
+        val isImmersiveReader = (viewModel.screen == AppScreen.LOCAL_READER ||
+            viewModel.screen == AppScreen.WEB_READER) &&
             !viewModel.readerChromeVisible
         val insetsController = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
         if (isReader) {
             window?.navigationBarColor = Color.Black.toArgb()
         }
-        if (isImmersiveLocalReader) {
+        if (isImmersiveReader) {
             insetsController?.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController?.hide(WindowInsetsCompat.Type.systemBars())
@@ -248,6 +251,7 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val previousChapter = viewModel.previousChapter()
     val nextChapter = viewModel.nextChapter()
     var pageError by remember(url) { mutableStateOf<String?>(null) }
+    var pageLoading by remember(url) { mutableStateOf(true) }
     val webView = remember(url, allowedDomains) {
         WebView(context).apply {
             settings.javaScriptEnabled = true
@@ -257,7 +261,39 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             settings.userAgentString = WebSettings.getDefaultUserAgent(context)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+            var downX = 0f
+            var downY = 0f
+            var moved = false
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.x
+                        downY = event.y
+                        moved = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (kotlin.math.abs(event.x - downX) > touchSlop ||
+                            kotlin.math.abs(event.y - downY) > touchSlop
+                        ) {
+                            moved = true
+                        }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!moved) viewModel.toggleReaderChrome()
+                    }
+                    MotionEvent.ACTION_CANCEL -> moved = true
+                }
+                // Let WebView keep handling scrolling, links and the normal
+                // security-check interaction after we observe the tap.
+                false
+            }
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, pageUrl: String, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, pageUrl, favicon)
+                    pageLoading = true
+                }
+
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest
@@ -267,6 +303,7 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     super.onPageFinished(view, pageUrl)
                     view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
                     pageError = null
+                    pageLoading = false
                     CookieManager.getInstance().flush()
                 }
 
@@ -287,6 +324,7 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     super.onReceivedError(view, request, error)
                     if (request.isForMainFrame) {
                         pageError = "网页加载失败：${error.description}"
+                        pageLoading = false
                     }
                 }
             }
@@ -315,21 +353,39 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             factory = { webView },
             modifier = Modifier.fillMaxSize()
         )
-        Box(
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.88f))
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-        ) {
-            ReaderControls(
-                previousChapter = previousChapter,
-                nextChapter = nextChapter,
-                enabled = !viewModel.isLoading,
-                onPrevious = { previousChapter?.let(viewModel::openChapter) },
-                onChapterList = viewModel::back,
-                onNext = { nextChapter?.let(viewModel::openChapter) }
-            )
+        if (viewModel.readerChromeVisible) {
+            Box(
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.88f))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                ReaderControls(
+                    previousChapter = previousChapter,
+                    nextChapter = nextChapter,
+                    enabled = !viewModel.isLoading && !pageLoading,
+                    onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                    onChapterList = viewModel::back,
+                    onNext = { nextChapter?.let(viewModel::openChapter) }
+                )
+            }
+        }
+        if (viewModel.readerChromeVisible && (viewModel.isLoading || pageLoading)) {
+            Card(
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.TopCenter)
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("正在加载章节…")
+                }
+            }
         }
         pageError?.let { message ->
             Card(
