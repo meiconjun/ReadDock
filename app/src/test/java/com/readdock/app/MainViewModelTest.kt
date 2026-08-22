@@ -312,7 +312,12 @@ class MainViewModelTest {
         assertEquals(2, reader.state.currentPage)
         reader.nextPage()
         assertEquals(2, reader.state.currentPage)
-        assertEquals(2, localRepository.items.value.single().currentPage)
+        reader.goToPage(1)
+        advanceUntilIdle()
+        assertEquals(1, reader.state.currentPage)
+        reader.goToPage(99)
+        assertEquals(1, reader.state.currentPage)
+        assertEquals(1, localRepository.items.value.single().currentPage)
     }
 }
 

@@ -126,8 +126,8 @@ requiresUserInteraction 只表示用户可能需要在目标服务允许的流�
 如果插件项目需要直接引用协议或运行时，可以从 GitHub Packages 获取当前 Beta 版本：
 
 ~~~text
-io.readdock:source-api:0.5.0-beta01
-io.readdock:source-runtime:0.5.0-beta01
+io.readdock:source-api:0.5.0-beta02
+io.readdock:source-runtime:0.5.0-beta02
 ~~~
 
 仓库地址是 `https://maven.pkg.github.com/meiconjun/ReadDock`。GitHub Packages 需要身份验证，请把令牌放在本机 Gradle 配置或 CI secret 中，不要提交到插件仓库。

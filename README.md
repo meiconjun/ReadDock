@@ -4,7 +4,7 @@ ReadDock 是一个先把本地阅读做好、再通过外部插件连接在线�
 
 如果你手上已经有 EPUB、MOBI、PDF、CBZ/ZIP 或图片文件，可以直接导入 ReadDock，在手机或平板上阅读。想接入在线数据源时，再安装符合自己授权和目标网站条款的外部插件。
 
-当前版本：0.5.0-beta01
+当前版本：0.5.0-beta02
 
 ## 先说清楚 ReadDock 是什么
 
@@ -24,6 +24,7 @@ ReadDock Beta 目前支持：
 - EPUB、MOBI、PDF、CBZ/ZIP、单张图片和图片文件夹；
 - 书架、阅读历史、阅读进度和本地图片缓存；
 - 图片缩放、拖拽、横向翻页、纵向阅读和超大图片保护；
+- 本地阅读器点击页面隐藏/显示控制层，并可拖动阅读进度条跳转页面；
 - 外部数据源插件的导入、启用、停用、更新、回滚和卸载；
 - 声明式 CSS 插件和受限 JavaScript 插件；
 - Android 手机和平板。
@@ -81,9 +82,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 打开“插件”页面，可以：
 
 1. 导入本地插件 JSON 包；
-2. 配置受信任的 HTTPS 插件仓库；
-3. 查看插件权限、域名和签名状态；
-4. 安装后启用、停用、更新、回滚或卸载。
+2. 配置受信任的 HTTPS 插件仓库、keyId 和 RSA 公钥 Base64；
+3. 读取签名 repository index，查看可用插件、权限和域名；
+4. 安装后启用、停用、更新、回滚或卸载；
+5. 取消仓库请求，并在失败后重试。
+
+本地导入也必须使用受信任公钥验证签名。ReadDock 不会因为导入 JSON 而关闭签名校验。
 
 主仓库不内置真实商业网站数据源。外部插件的作者和使用者需要自行确认版权、授权、隐私和目标网站条款。
 
@@ -146,8 +150,8 @@ repositories {
 当前 Beta 坐标是：
 
 ~~~text
-io.readdock:source-api:0.5.0-beta01
-io.readdock:source-runtime:0.5.0-beta01
+io.readdock:source-api:0.5.0-beta02
+io.readdock:source-runtime:0.5.0-beta02
 ~~~
 
 Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions 密钥，不要把令牌写进源码、Gradle 文件或 README。
@@ -175,7 +179,7 @@ Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions
 
 本机 release keystore 和 keystore.properties 已被 Git 忽略，不能提交到仓库。其他维护者请参考 [keystore.properties.example](keystore.properties.example)，不要复制或共享现有私钥。
 
-发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta01.md](docs/RELEASE_BETA_0.5.0-beta01.md)。
+发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta02.md](docs/RELEASE_BETA_0.5.0-beta02.md)。
 
 ## 贡献和许可证
 

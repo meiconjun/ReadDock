@@ -79,6 +79,11 @@ class LocalReaderViewModel(
         showPage(state.currentPage + 1)
     }
 
+    fun goToPage(pageNumber: Int) {
+        if (state.isPageLoading || pageNumber !in 1..state.pageCount) return
+        if (pageNumber != state.currentPage) showPage(pageNumber)
+    }
+
     fun retry() {
         if (state.status == LocalReaderStatus.ERROR) {
             viewModelScope.launch { loadBook() }

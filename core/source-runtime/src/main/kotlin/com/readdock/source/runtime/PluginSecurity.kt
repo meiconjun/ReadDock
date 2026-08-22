@@ -30,7 +30,8 @@ class PluginTrustStore(
     private val publicKeys: Map<String, String>
 ) {
     fun find(keyId: String): PublicKey? = runCatching {
-        val encoded = Base64.getDecoder().decode(publicKeys[keyId] ?: return null)
+        val encodedKey = publicKeys[keyId]?.filterNot(Char::isWhitespace) ?: return null
+        val encoded = Base64.getDecoder().decode(encodedKey)
         KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(encoded))
     }.getOrNull()
 }
