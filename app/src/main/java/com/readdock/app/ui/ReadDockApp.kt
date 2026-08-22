@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,6 +57,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -923,22 +926,27 @@ private fun SourcesScreen(
             .fillMaxSize()
             .padding(padding)
             .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Spacer(Modifier.height(20.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-        Text("数据源插件", style = MaterialTheme.typography.headlineMedium)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("数据源插件", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "导入受信任的插件包，扩展可用的数据源",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            Button(onClick = { picker.launch(arrayOf("application/json", "text/plain")) }) {
-                Text("导入插件")
+                Button(
+                    onClick = { picker.launch(arrayOf("application/json", "text/plain")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("导入插件")
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -946,50 +954,61 @@ private fun SourcesScreen(
             InlineMessage(it)
             Spacer(Modifier.height(8.dp))
         }
-        Text("插件仓库", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryUrl,
-            onValueChange = viewModel::updateRepositoryUrl,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("仓库索引 URL") }
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryKeyId,
-            onValueChange = viewModel::updateRepositoryKeyId,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("可信公钥 keyId") }
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryPublicKey,
-            onValueChange = viewModel::updateRepositoryPublicKey,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 4,
-            label = { Text("RSA 公钥 Base64") }
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = viewModel::refreshRepository,
-                enabled = !viewModel.repositoryBusy
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("读取仓库")
-            }
-            TextButton(onClick = viewModel::clearRepositoryConfiguration) {
-                Text("清除配置")
-            }
-            if (viewModel.repositoryBusy) {
-                TextButton(onClick = viewModel::cancelRepositoryOperation) {
-                    Text("取消")
+                Text("插件仓库", style = MaterialTheme.typography.titleLarge)
+                OutlinedTextField(
+                    value = viewModel.repositoryUrl,
+                    onValueChange = viewModel::updateRepositoryUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("仓库索引 URL") }
+                )
+                OutlinedTextField(
+                    value = viewModel.repositoryKeyId,
+                    onValueChange = viewModel::updateRepositoryKeyId,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("可信公钥 keyId") }
+                )
+                OutlinedTextField(
+                    value = viewModel.repositoryPublicKey,
+                    onValueChange = viewModel::updateRepositoryPublicKey,
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4,
+                    label = { Text("RSA 公钥 Base64") }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = viewModel::refreshRepository,
+                        modifier = Modifier.weight(1f),
+                        enabled = !viewModel.repositoryBusy
+                    ) {
+                        Text("读取仓库")
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::clearRepositoryConfiguration,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("清除配置")
+                    }
+                }
+                if (viewModel.repositoryBusy) {
+                    TextButton(
+                        onClick = viewModel::cancelRepositoryOperation,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("取消读取")
+                    }
                 }
             }
         }
@@ -1016,28 +1035,32 @@ private fun SourcesScreen(
                             .fillMaxWidth()
                             .padding(bottom = 6.dp)
                     ) {
-                        ListItem(
-                            headlineContent = { Text(entry.name) },
-                            supportingContent = {
-                                Column {
-                                    Text("${entry.id} · v${entry.version}")
-                                    entry.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
-                                    if (entry.domains.isNotEmpty()) {
-                                        Text("域名：${entry.domains.joinToString("、")}")
-                                    }
-                                    if (entry.permissions.isNotEmpty()) {
-                                        Text(
-                                            "权限：${entry.permissions.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    if (entry.capabilities.isNotEmpty()) {
-                                        Text(
-                                            "能力：${entry.capabilities.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                }
-                            },
-                            trailingContent = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(entry.name, style = MaterialTheme.typography.titleMedium)
+                            Text("${entry.id} · v${entry.version}")
+                            entry.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
+                            if (entry.domains.isNotEmpty()) {
+                                Text("域名：${entry.domains.joinToString("、")}")
+                            }
+                            if (entry.permissions.isNotEmpty()) {
+                                Text(
+                                    "权限：${entry.permissions.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            if (entry.capabilities.isNotEmpty()) {
+                                Text(
+                                    "能力：${entry.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
                                 TextButton(
                                     onClick = { viewModel.installRepositoryPlugin(entry) },
                                     enabled = !viewModel.repositoryBusy &&
@@ -1046,7 +1069,7 @@ private fun SourcesScreen(
                                     Text(if (installed == null) "安装" else if (hasUpdate) "更新" else "已安装")
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -1120,57 +1143,60 @@ private fun SourcesScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(viewModel.installedPlugins, key = { it.id }) { plugin ->
+                viewModel.installedPlugins.forEach { plugin ->
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        ListItem(
-                        headlineContent = { Text(plugin.name) },
-                            supportingContent = {
-                                Column {
-                                    Text("${plugin.id} · v${plugin.version}")
-                                    if (plugin.domains.isNotEmpty()) {
-                                        Text("域名：${plugin.domains.joinToString("、")}")
-                                    }
-                                    if (plugin.permissions.isNotEmpty()) {
-                                        Text(
-                                            "权限：${plugin.permissions.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    if (plugin.capabilities.isNotEmpty()) {
-                                        Text(
-                                            "能力：${plugin.capabilities.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    Text(
-                                        "限速：${plugin.rateLimit.requestsPerMinute}/分钟，" +
-                                            "并发 ${plugin.rateLimit.concurrency}"
-                                    )
-                                    if (plugin.requiresUserInteraction) {
-                                        Text("需要用户交互")
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(plugin.name, style = MaterialTheme.typography.titleMedium)
+                            Text("${plugin.id} · v${plugin.version}")
+                            if (plugin.domains.isNotEmpty()) {
+                                Text("域名：${plugin.domains.joinToString("、")}")
+                            }
+                            if (plugin.permissions.isNotEmpty()) {
+                                Text(
+                                    "权限：${plugin.permissions.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            if (plugin.capabilities.isNotEmpty()) {
+                                Text(
+                                    "能力：${plugin.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            Text(
+                                "限速：${plugin.rateLimit.requestsPerMinute}/分钟，" +
+                                    "并发 ${plugin.rateLimit.concurrency}"
+                            )
+                            if (plugin.requiresUserInteraction) {
+                                Text("需要用户交互")
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Text("启用")
+                                Switch(
+                                    checked = plugin.enabled,
+                                    onCheckedChange = { viewModel.setPluginEnabled(plugin.id, it) }
+                                )
+                                if (plugin.canRollback) {
+                                    TextButton(onClick = { viewModel.rollbackPlugin(plugin.id) }) {
+                                        Text("回滚")
                                     }
                                 }
-                            },
-                            trailingContent = {
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Switch(
-                                        checked = plugin.enabled,
-                                        onCheckedChange = { viewModel.setPluginEnabled(plugin.id, it) }
-                                    )
-                                    if (plugin.canRollback) {
-                                        TextButton(onClick = { viewModel.rollbackPlugin(plugin.id) }) {
-                                            Text("回滚")
-                                        }
-                                    }
-                                    TextButton(onClick = { viewModel.uninstallPlugin(plugin.id) }) {
-                                        Text("卸载")
-                                    }
+                                TextButton(onClick = { viewModel.uninstallPlugin(plugin.id) }) {
+                                    Text("卸载")
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
