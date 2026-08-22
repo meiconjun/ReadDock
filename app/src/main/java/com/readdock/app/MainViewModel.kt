@@ -78,6 +78,14 @@ enum class MessageTone {
     ERROR
 }
 
+enum class WebReaderLoadStatus {
+    IDLE,
+    LOADING,
+    LOADED,
+    FAILED,
+    CANCELED
+}
+
 data class UiMessage(
     val text: String,
     val tone: MessageTone
@@ -202,6 +210,14 @@ class MainViewModel(
         private set
     var webReaderAllowedDomains by mutableStateOf<Set<String>>(emptySet())
         private set
+    var webReaderGeneration by mutableStateOf(0L)
+        private set
+    var webReaderLoadStatus by mutableStateOf(WebReaderLoadStatus.IDLE)
+        private set
+    var webReaderLoadedUrl by mutableStateOf<String?>(null)
+        private set
+    var webReaderLoadError by mutableStateOf<String?>(null)
+        private set
     var pages by mutableStateOf<List<ComicPage>>(emptyList())
         private set
     private var readerRetryVersions by mutableStateOf<Map<String, Int>>(emptyMap())
@@ -311,6 +327,26 @@ class MainViewModel(
             selectedChapter?.id == chapter.id &&
             !isLoading
         ) return
+
+        val detail = selectedDetail
+        if (detail == null || chapter.sourceId != detail.summary.sourceId ||
+            chapter.comicId != detail.summary.id
+        ) {
+            errorMessage = "章节不属于当前漫画，无法打开"
+            return
+        }
+        val source = try {
+            registry.require(chapter.sourceId)
+        } catch (_: Throwable) {
+            errorMessage = "章节数据源不可用，请重试"
+            return
+        }
+        val interactive = source.manifest.requiresUserInteraction
+        if (interactive && !isAllowedInteractiveUrl(chapter.id, source.manifest.domains)) {
+            errorMessage = "交互式阅读地址不在插件声明的域名范围内"
+            return
+        }
+
         navigationJob?.cancel()
         val generation = beginReaderSession()
         readerChromeVisible = true
@@ -318,26 +354,30 @@ class MainViewModel(
         pages = emptyList()
         readerProgressLoaded = false
         readerPage = 1
+        isLoading = true
+        errorMessage = null
+        actionMessage = null
+        if (interactive) {
+            // Publish the target before launching the coroutine. The WebReader
+            // must see a new URL in the same state transition as the chapter.
+            webReaderUrl = chapter.id
+            webReaderAllowedDomains = source.manifest.domains
+                .map(String::lowercase)
+                .toSet()
+            webReaderLoadStatus = WebReaderLoadStatus.LOADING
+            webReaderLoadedUrl = null
+            webReaderLoadError = null
+            navigateTo(AppScreen.WEB_READER)
+        } else {
+            webReaderUrl = null
+            webReaderAllowedDomains = emptySet()
+            webReaderLoadStatus = WebReaderLoadStatus.IDLE
+            webReaderLoadedUrl = null
+            webReaderLoadError = null
+        }
         navigationJob = viewModelScope.launch {
-            isLoading = true
-            errorMessage = null
-            actionMessage = null
             try {
-                val detail = selectedDetail
-                require(detail != null && chapter.sourceId == detail.summary.sourceId &&
-                    chapter.comicId == detail.summary.id) {
-                    "章节不属于当前漫画，无法打开"
-                }
-                val source = registry.require(chapter.sourceId)
-                if (source.manifest.requiresUserInteraction) {
-                    require(isAllowedInteractiveUrl(chapter.id, source.manifest.domains)) {
-                        "交互式阅读地址不在插件声明的域名范围内"
-                    }
-                    selectedChapter = chapter
-                    webReaderUrl = chapter.id
-                    webReaderAllowedDomains = source.manifest.domains
-                        .map(String::lowercase)
-                        .toSet()
+                if (interactive) {
                     navigateTo(AppScreen.WEB_READER)
                     try {
                         library.saveComic(detail)
@@ -860,6 +900,8 @@ class MainViewModel(
 
     fun back() {
         if (backStack.size <= 1) return
+        val cancelWebReader = screen == AppScreen.WEB_READER &&
+            webReaderLoadStatus == WebReaderLoadStatus.LOADING
         navigationJob?.cancel()
         navigationJob = null
         if (screen == AppScreen.READER || screen == AppScreen.WEB_READER ||
@@ -870,6 +912,7 @@ class MainViewModel(
         if (screen == AppScreen.READER || screen == AppScreen.WEB_READER) {
             invalidateReaderSession()
         }
+        if (cancelWebReader) actionMessage = infoMessage("章节加载已取消")
         isLoading = false
         popScreen()
         if (screen != AppScreen.LOCAL_READER) selectedLocalComicId = null
@@ -899,6 +942,7 @@ class MainViewModel(
 
     private fun beginReaderSession(): Long {
         readerGeneration += 1
+        webReaderGeneration = readerGeneration
         onlineImageLoader.clearMemory()
         readerRetryVersions = emptyMap()
         readerProgressJob?.cancel()
@@ -907,11 +951,44 @@ class MainViewModel(
 
     private fun invalidateReaderSession() {
         readerGeneration += 1
+        webReaderGeneration = readerGeneration
         onlineImageLoader.clearMemory()
         readerRetryVersions = emptyMap()
         readerProgressJob?.cancel()
         webReaderUrl = null
         webReaderAllowedDomains = emptySet()
+        webReaderLoadStatus = WebReaderLoadStatus.CANCELED
+        webReaderLoadedUrl = null
+        webReaderLoadError = null
+    }
+
+    fun markWebReaderLoadStarted(generation: Long, url: String) {
+        if (generation != webReaderGeneration || webReaderUrl == null) return
+        webReaderLoadStatus = WebReaderLoadStatus.LOADING
+        // This callback means that a request has started, not that WebView
+        // committed a document. Keep the diagnostic URL empty until the
+        // WebView callback reports the actual page URL.
+        webReaderLoadedUrl = null
+        webReaderLoadError = null
+    }
+
+    fun markWebReaderLoadFinished(generation: Long, url: String) {
+        if (generation != webReaderGeneration || webReaderUrl == null) return
+        webReaderLoadStatus = WebReaderLoadStatus.LOADED
+        webReaderLoadedUrl = url
+        webReaderLoadError = null
+    }
+
+    fun markWebReaderLoadFailed(generation: Long, url: String?, message: String) {
+        if (generation != webReaderGeneration || webReaderUrl == null) return
+        webReaderLoadStatus = WebReaderLoadStatus.FAILED
+        webReaderLoadedUrl = url
+        webReaderLoadError = message
+    }
+
+    fun markWebReaderLoadCanceled(generation: Long) {
+        if (generation != webReaderGeneration) return
+        webReaderLoadStatus = WebReaderLoadStatus.CANCELED
     }
 
     private fun isAllowedInteractiveUrl(url: String, domains: Collection<String>): Boolean {
@@ -1060,7 +1137,9 @@ internal fun adjacentChapter(
     offset: Int
 ): Chapter? {
     if (currentId == null) return null
-    val orderedChapters = chapters.sortedBy(Chapter::number)
+    val orderedChapters = chapters
+        .distinctBy(Chapter::id)
+        .sortedWith(compareBy<Chapter> { it.number }.thenBy { it.id })
     val currentIndex = orderedChapters.indexOfFirst { it.id == currentId }
     if (currentIndex < 0) return null
     return orderedChapters.getOrNull(currentIndex + offset)
