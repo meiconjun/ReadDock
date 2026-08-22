@@ -179,7 +179,7 @@ Packages 需要 GitHub 身份验证。请使用自己的令牌或 GitHub Actions
 
 本机 release keystore 和 keystore.properties 已被 Git 忽略，不能提交到仓库。其他维护者请参考 [keystore.properties.example](keystore.properties.example)，不要复制或共享现有私钥。
 
-发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta02.md](docs/RELEASE_BETA_0.5.0-beta02.md)。
+发布说明和本次验证结果见 [docs/RELEASE_BETA_0.5.0-beta03.md](docs/RELEASE_BETA_0.5.0-beta03.md)。
 
 ## 贡献和许可证
 

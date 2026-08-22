@@ -21,8 +21,8 @@ android {
         applicationId = "com.readdock.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.5.0-beta02"
+        versionCode = 9
+        versionName = "0.5.0-beta03"
     }
 
     buildFeatures {
