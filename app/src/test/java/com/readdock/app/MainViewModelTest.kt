@@ -112,6 +112,30 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `interactive plugin opens the browser reader instead of direct image downloads`() = runTest {
+        val source = SyntheticComicSource(requiresUserInteraction = true)
+        val viewModel = MainViewModel(
+            context,
+            repository,
+            source,
+            localComicRepository = localRepository
+        )
+        advanceUntilIdle()
+
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        val chapter = viewModel.selectedDetail!!.chapters.first()
+        viewModel.openChapter(chapter)
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.WEB_READER, viewModel.screen)
+        assertEquals(chapter.id, viewModel.webReaderUrl)
+        assertEquals(setOf("synthetic.invalid"), viewModel.webReaderAllowedDomains)
+        assertTrue(viewModel.pages.isEmpty())
+    }
+
+    @Test
     fun `opening a chapter does not eagerly fetch every image`() = runTest {
         val fetchCount = AtomicInteger(0)
         val viewModel = createViewModel(fetchCount)

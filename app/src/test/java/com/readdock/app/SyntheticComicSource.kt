@@ -10,7 +10,9 @@ import com.readdock.source.api.SourceCapability
 import com.readdock.source.api.SourceManifest
 
 /** Test-only source; no production build path references this class. */
-class SyntheticComicSource : ComicSource {
+class SyntheticComicSource(
+    private val requiresUserInteraction: Boolean = false
+) : ComicSource {
     override val manifest = SourceManifest(
         id = SOURCE_ID,
         name = "Synthetic test source",
@@ -26,6 +28,7 @@ class SyntheticComicSource : ComicSource {
         ),
         permissions = emptySet(),
         rateLimit = RateLimit(requestsPerMinute = 120, concurrency = 4),
+        requiresUserInteraction = requiresUserInteraction,
         license = "Test-only synthetic content"
     )
 
@@ -58,7 +61,11 @@ class SyntheticComicSource : ComicSource {
             description = "仅用于离线测试的合成内容。",
             chapters = chapterTitles.getValue(comicId).mapIndexed { index, title ->
                 Chapter(
-                    id = "$comicId-${index + 1}",
+                    id = if (requiresUserInteraction) {
+                        "https://synthetic.invalid/chapters/$comicId-${index + 1}"
+                    } else {
+                        "$comicId-${index + 1}"
+                    },
                     sourceId = SOURCE_ID,
                     comicId = comicId,
                     title = title,

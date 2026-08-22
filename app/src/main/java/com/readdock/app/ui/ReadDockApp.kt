@@ -1,5 +1,14 @@
 package com.readdock.app.ui
 
+import android.annotation.SuppressLint
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -66,6 +75,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.readdock.app.AppScreen
@@ -119,7 +129,9 @@ fun ReadDockApp() {
     DisposableEffect(activity, viewModel.screen, viewModel.readerChromeVisible) {
         val window = activity?.window
         val previousNavigationBarColor = window?.navigationBarColor
-        val isReader = viewModel.screen == AppScreen.READER || viewModel.screen == AppScreen.LOCAL_READER
+        val isReader = viewModel.screen == AppScreen.READER ||
+            viewModel.screen == AppScreen.WEB_READER ||
+            viewModel.screen == AppScreen.LOCAL_READER
         val isImmersiveLocalReader = viewModel.screen == AppScreen.LOCAL_READER &&
             !viewModel.readerChromeVisible
         val insetsController = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
@@ -146,9 +158,11 @@ fun ReadDockApp() {
             if (viewModel.screen != AppScreen.SEARCH &&
                 viewModel.screen != AppScreen.LIBRARY &&
                 viewModel.screen != AppScreen.SOURCES &&
+                viewModel.screen != AppScreen.WEB_READER &&
                 (viewModel.screen != AppScreen.LOCAL_READER || viewModel.readerChromeVisible)
             ) {
                 val isComicReader = viewModel.screen == AppScreen.READER ||
+                    viewModel.screen == AppScreen.WEB_READER ||
                     viewModel.screen == AppScreen.LOCAL_READER
                 TopAppBar(
                     title = {
@@ -156,6 +170,7 @@ fun ReadDockApp() {
                             when (viewModel.screen) {
                                 AppScreen.DETAIL -> viewModel.selectedDetail?.summary?.title ?: "漫画详情"
                                 AppScreen.READER -> viewModel.selectedChapter?.title ?: "阅读"
+                                AppScreen.WEB_READER -> viewModel.selectedChapter?.title ?: "网页阅读"
                                 AppScreen.LOCAL_READER -> localComics
                                     .firstOrNull { it.id == viewModel.selectedLocalComicId }
                                     ?.title
@@ -211,6 +226,7 @@ fun ReadDockApp() {
             AppScreen.SOURCES -> SourcesScreen(viewModel, sourceHealth, padding)
             AppScreen.DETAIL -> DetailScreen(viewModel, savedIds, padding)
             AppScreen.READER -> ReaderScreen(viewModel, padding)
+            AppScreen.WEB_READER -> WebReaderScreen(viewModel, padding)
             AppScreen.LOCAL_READER -> viewModel.selectedLocalComicId?.let { id ->
                 LocalReaderScreen(
                     comicId = id,
@@ -222,6 +238,156 @@ fun ReadDockApp() {
         }
     }
 }
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
+    val context = LocalContext.current
+    val url = viewModel.webReaderUrl ?: return
+    val allowedDomains = viewModel.webReaderAllowedDomains
+    var pageError by remember(url) { mutableStateOf<String?>(null) }
+    val webView = remember(url, allowedDomains) {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.userAgentString = WebSettings.getDefaultUserAgent(context)
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean = !isAllowedWebHost(request.url.host, allowedDomains)
+
+                override fun onPageFinished(view: WebView, pageUrl: String) {
+                    super.onPageFinished(view, pageUrl)
+                    view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
+                    pageError = null
+                    CookieManager.getInstance().flush()
+                }
+
+                override fun onPageCommitVisible(view: WebView, pageUrl: String) {
+                    super.onPageCommitVisible(view, pageUrl)
+                    // A security-check page can replace its DOM in place after
+                    // the initial load. Re-install the reader script when the
+                    // visible document changes so a completed user check can
+                    // continue into the image-only reader.
+                    view.evaluateJavascript(PURE_IMAGE_READER_SCRIPT, null)
+                }
+
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: WebResourceError
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request.isForMainFrame) {
+                        pageError = "网页加载失败：${error.description}"
+                    }
+                }
+            }
+            webChromeClient = WebChromeClient()
+        }
+    }
+
+    BackHandler { viewModel.back() }
+
+    DisposableEffect(webView) {
+        onDispose {
+            webView.stopLoading()
+            webView.destroy()
+        }
+    }
+    LaunchedEffect(url) {
+        if (webView.url != url) webView.loadUrl(url)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+    ) {
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxSize()
+        )
+        pageError?.let { message ->
+            Card(
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.TopCenter)
+                    .padding(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(message, color = MaterialTheme.colorScheme.error)
+                    Button(
+                        onClick = {
+                            pageError = null
+                            webView.reload()
+                        },
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.End)
+                    ) {
+                        Text("重试")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun isAllowedWebHost(host: String?, domains: Set<String>): Boolean {
+    val normalizedHost = host?.lowercase() ?: return false
+    return domains.any { domain ->
+        normalizedHost == domain || normalizedHost.endsWith(".$domain")
+    }
+}
+
+/** Keep the browser session, but remove site chrome after the chapter loads. */
+private val PURE_IMAGE_READER_SCRIPT = """
+    (function() {
+        if (window.__readdockReaderInstalled) return 'already-installed';
+        window.__readdockReaderInstalled = true;
+
+        function render() {
+            if (window.__readdockReaderRendered) return 'already-rendered';
+            const pages = Array.from(document.querySelectorAll('img.page'));
+            if (!pages.length) return 'no-pages';
+
+            const sources = pages.map(function(page) {
+                return page.currentSrc || page.getAttribute('src') ||
+                    page.getAttribute('data-src') || page.getAttribute('data-original');
+            }).filter(Boolean);
+
+            document.documentElement.innerHTML =
+                '<head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+                '<style>html,body{margin:0;padding:0;background:#000;}body{' +
+                'display:flex;flex-direction:column;align-items:center;}img{' +
+                'display:block;width:100%;height:auto;max-width:100%;object-fit:contain;}' +
+                '</style></head><body></body>';
+            const body = document.body;
+            sources.forEach(function(source) {
+                const image = document.createElement('img');
+                image.src = source;
+                image.loading = 'eager';
+                body.appendChild(image);
+            });
+            window.__readdockReaderRendered = true;
+            return String(sources.length);
+        }
+
+        render();
+        [500, 1500, 3000, 6000, 12000, 30000].forEach(function(delay) {
+            setTimeout(render, delay);
+        });
+        // Cloudflare may complete a human verification by mutating the
+        // current document instead of doing a full navigation. Keep watching
+        // briefly so the normal chapter DOM is rendered when it appears.
+        const observer = new MutationObserver(render);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        setTimeout(function() { observer.disconnect(); }, 45000);
+    })();
+""".trimIndent()
 
 @Composable
 private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
