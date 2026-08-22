@@ -1,6 +1,8 @@
 package com.readdock.app.ui
 
 import android.annotation.SuppressLint
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -78,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlin.math.abs
 import com.readdock.app.AppScreen
 import com.readdock.app.MainActivity
 import com.readdock.app.MainViewModel
@@ -259,9 +262,29 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
             settings.userAgentString = WebSettings.getDefaultUserAgent(context)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            // WebView keeps handling scrolling and links; its click callback
-            // is only invoked for a completed tap, so a swipe remains a swipe.
-            setOnClickListener { viewModel.toggleReaderChrome() }
+            // Keep WebView scrolling intact while treating a short press as
+            // the reader chrome toggle. WebView's click listener is not
+            // reliable for pages that handle their own touch events.
+            var touchDownX = 0f
+            var touchDownY = 0f
+            var touchDownAt = 0L
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchDownX = event.x
+                        touchDownY = event.y
+                        touchDownAt = SystemClock.uptimeMillis()
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val isTap =
+                            abs(event.x - touchDownX) < 24f &&
+                                abs(event.y - touchDownY) < 24f &&
+                                SystemClock.uptimeMillis() - touchDownAt < 600L
+                        if (isTap) viewModel.toggleReaderChrome()
+                    }
+                }
+                false
+            }
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, pageUrl: String, favicon: android.graphics.Bitmap?) {
                     super.onPageStarted(view, pageUrl, favicon)
@@ -315,7 +338,10 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
         }
     }
     LaunchedEffect(url) {
-        if (webView.url != url) webView.loadUrl(url)
+        pageLoading = true
+        pageError = null
+        webView.stopLoading()
+        webView.loadUrl(url)
     }
 
     Box(
@@ -336,25 +362,21 @@ private fun WebReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     .padding(horizontal = 8.dp, vertical = 2.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = viewModel.selectedChapter?.title ?: "正在加载章节…",
+                        color = Color.LightGray,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
                     ReaderControls(
                         previousChapter = previousChapter,
                         nextChapter = nextChapter,
                         enabled = !viewModel.isLoading && !pageLoading,
-                        onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                        onPrevious = viewModel::openPreviousChapter,
                         onChapterList = viewModel::back,
-                        onNext = { nextChapter?.let(viewModel::openChapter) }
+                        onNext = viewModel::openNextChapter
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        TextButton(
-                            onClick = viewModel::toggleReaderChrome,
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
-                        ) {
-                            Text("隐藏界面")
-                        }
-                    }
                 }
             }
         }
@@ -1205,9 +1227,9 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
                     previousChapter = previousChapter,
                     nextChapter = nextChapter,
                     enabled = !viewModel.isLoading,
-                    onPrevious = { previousChapter?.let(viewModel::openChapter) },
+                    onPrevious = viewModel::openPreviousChapter,
                     onChapterList = viewModel::back,
-                    onNext = { nextChapter?.let(viewModel::openChapter) }
+                    onNext = viewModel::openNextChapter
                 )
             }
         }

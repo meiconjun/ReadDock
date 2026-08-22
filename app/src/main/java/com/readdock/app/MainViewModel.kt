@@ -596,6 +596,22 @@ class MainViewModel(
 
     fun nextChapter(): Chapter? = adjacentChapter(offset = 1)
 
+    /** Re-resolve the target at click time so a recomposed reader cannot use a stale chapter. */
+    fun openPreviousChapter() = openAdjacentChapter(offset = -1)
+
+    fun openNextChapter() = openAdjacentChapter(offset = 1)
+
+    private fun openAdjacentChapter(offset: Int) {
+        val target = adjacentChapter(offset)
+        if (target == null) {
+            actionMessage = infoMessage(
+                if (offset < 0) "已经是第一章" else "已经是最新章节"
+            )
+            return
+        }
+        openChapter(target)
+    }
+
     private fun adjacentChapter(offset: Int): Chapter? {
         return adjacentChapter(
             chapters = selectedDetail?.chapters.orEmpty(),
