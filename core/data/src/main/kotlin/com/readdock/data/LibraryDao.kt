@@ -44,7 +44,17 @@ data class LocalComicRow(
     val createdAt: Long,
     val updatedAt: Long,
     val fileSize: Long,
-    val fileHash: String
+    val fileHash: String,
+    val hasBeenOpened: Boolean,
+    val completed: Boolean,
+    val lastReadAt: Long,
+    val categoryIds: String
+)
+
+data class LocalCategoryRow(
+    val id: String,
+    val name: String,
+    val createdAt: Long
 )
 
 @Dao
@@ -94,6 +104,9 @@ interface LibraryDao {
     )
     fun observeHistory(): Flow<List<ReadingHistoryRow>>
 
+    @Query("DELETE FROM reading_progress")
+    suspend fun deleteAllHistory()
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertComicIfMissing(comic: ComicEntity)
 
@@ -125,6 +138,24 @@ interface LibraryDao {
     @Query("SELECT * FROM local_comics ORDER BY updatedAt DESC, createdAt DESC")
     fun observeLocalComics(): Flow<List<LocalComicEntity>>
 
+    @Query("SELECT * FROM local_categories ORDER BY createdAt ASC, name ASC")
+    fun observeLocalCategories(): Flow<List<LocalCategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertLocalCategory(category: LocalCategoryEntity)
+
+    @Update
+    suspend fun updateLocalCategory(category: LocalCategoryEntity)
+
+    @Query("DELETE FROM local_categories WHERE id = :id")
+    suspend fun deleteLocalCategory(id: String)
+
+    @Query("SELECT * FROM local_categories WHERE id = :id LIMIT 1")
+    suspend fun findLocalCategory(id: String): LocalCategoryEntity?
+
+    @Query("UPDATE local_comics SET categoryIds = :categoryIds WHERE id = :comicId")
+    suspend fun updateLocalComicCategories(comicId: String, categoryIds: String)
+
     @Query("SELECT * FROM local_comics WHERE id = :id LIMIT 1")
     suspend fun findLocalComic(id: String): LocalComicEntity?
 
@@ -134,8 +165,11 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLocalComic(comic: LocalComicEntity)
 
-    @Query("UPDATE local_comics SET currentPage = :currentPage, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun updateLocalProgress(id: String, currentPage: Int, updatedAt: Long)
+    @Query(
+        "UPDATE local_comics SET currentPage = :currentPage, updatedAt = :updatedAt, " +
+            "hasBeenOpened = 1, completed = :completed, lastReadAt = :updatedAt WHERE id = :id"
+    )
+    suspend fun updateLocalProgress(id: String, currentPage: Int, updatedAt: Long, completed: Boolean)
 
     @Query("DELETE FROM local_comics WHERE id = :id")
     suspend fun deleteLocalComic(id: String)

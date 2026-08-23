@@ -14,6 +14,7 @@ import com.readdock.data.ImageDownloadQueue
 import com.readdock.data.LibraryComic
 import com.readdock.data.LibraryRepository
 import com.readdock.data.LocalComic
+import com.readdock.data.LocalCategory
 import com.readdock.data.LocalComicRepository
 import com.readdock.data.ReadingHistoryItem
 import com.readdock.data.RoomLibraryRepository
@@ -56,8 +57,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -72,6 +78,12 @@ enum class AppScreen {
     LIBRARY,
     SOURCES
 }
+
+enum class LibraryTab { ONLINE, LOCAL }
+enum class OnlineShelfSection { FAVORITES, HISTORY }
+enum class LocalViewMode { LIST, GRID }
+enum class LocalFilter { ALL, UNREAD, READING, COMPLETED }
+enum class LocalSort { RECENT_READ, RECENT_ADDED, TITLE, FILE_NAME, PROGRESS }
 
 enum class MessageTone {
     INFO,
@@ -110,9 +122,18 @@ class MainViewModel(
     private val localComicRepository: LocalComicRepository = RoomLocalComicRepository.create(appContext)
 ) : ViewModel() {
     private val injectedSource = sourceOverride
+    private val sourceDispatcher = if (injectedSource != null) {
+        Dispatchers.Main.immediate
+    } else {
+        Dispatchers.IO
+    }
     private val registry = SourceRegistry(listOfNotNull(injectedSource))
     private val repositoryPreferences = appContext.getSharedPreferences(
         "plugin_repository",
+        Context.MODE_PRIVATE
+    )
+    private val libraryPreferences = appContext.getSharedPreferences(
+        "library_preferences",
         Context.MODE_PRIVATE
     )
     private val pluginStore = LocalPluginStore(File(appContext.filesDir, "plugins")) {
@@ -139,6 +160,8 @@ class MainViewModel(
     private var readerGeneration = 0L
     private var readerProgressJob: Job? = null
     private val readerProgressMutex = Mutex()
+    private var retryComic: ComicSummary? = null
+    private var retryChapterId: String? = null
 
     val libraryItems: StateFlow<List<LibraryComic>> = library.observeLibrary().stateIn(
         scope = viewModelScope,
@@ -155,6 +178,11 @@ class MainViewModel(
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
+    val localCategories: StateFlow<List<LocalCategory>> = localComicRepository.observeCategories().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
     val sourceHealth: StateFlow<Map<String, SourceHealthSnapshot>> = healthTracker.snapshots
     val savedIds: StateFlow<Set<String>> = libraryItems.map { comics ->
         comics.mapTo(mutableSetOf()) { comicKey(it.sourceId, it.comicId) }
@@ -165,6 +193,42 @@ class MainViewModel(
     )
 
     var screen by mutableStateOf(AppScreen.SEARCH)
+        private set
+    var libraryTab by mutableStateOf(
+        libraryPreferences.getString(KEY_LIBRARY_TAB, LibraryTab.ONLINE.name)
+            ?.let { runCatching { LibraryTab.valueOf(it) }.getOrDefault(LibraryTab.ONLINE) }
+            ?: LibraryTab.ONLINE
+    )
+        private set
+    var onlineShelfSection by mutableStateOf(
+        libraryPreferences.getString(KEY_ONLINE_SECTION, OnlineShelfSection.FAVORITES.name)
+            ?.let { runCatching { OnlineShelfSection.valueOf(it) }.getOrDefault(OnlineShelfSection.FAVORITES) }
+            ?: OnlineShelfSection.FAVORITES
+    )
+        private set
+    var localViewMode by mutableStateOf(
+        libraryPreferences.getString(KEY_LOCAL_VIEW, LocalViewMode.LIST.name)
+            ?.let { runCatching { LocalViewMode.valueOf(it) }.getOrDefault(LocalViewMode.LIST) }
+            ?: LocalViewMode.LIST
+    )
+        private set
+    var localFilter by mutableStateOf(
+        libraryPreferences.getString(KEY_LOCAL_FILTER, LocalFilter.ALL.name)
+            ?.let { runCatching { LocalFilter.valueOf(it) }.getOrDefault(LocalFilter.ALL) }
+            ?: LocalFilter.ALL
+    )
+        private set
+    var localSort by mutableStateOf(
+        libraryPreferences.getString(KEY_LOCAL_SORT, LocalSort.RECENT_READ.name)
+            ?.let { runCatching { LocalSort.valueOf(it) }.getOrDefault(LocalSort.RECENT_READ) }
+            ?: LocalSort.RECENT_READ
+    )
+        private set
+    var localSortAscending by mutableStateOf(
+        libraryPreferences.getBoolean(KEY_LOCAL_SORT_ASCENDING, false)
+    )
+        private set
+    var selectedLocalCategoryId by mutableStateOf<String?>(null)
         private set
     var query by mutableStateOf("")
         private set
@@ -246,6 +310,16 @@ class MainViewModel(
     val canGoBack: Boolean
         get() = backStack.size > 1
 
+    val canRetryComic: Boolean
+        get() = retryComic != null
+
+    fun sourceLabel(sourceId: String): String = registry.sources
+        .firstOrNull { it.manifest.id == sourceId }
+        ?.manifest
+        ?.name
+        ?.takeIf { it.isNotBlank() }
+        ?: sourceId
+
     init {
         viewModelScope.launch {
             try {
@@ -284,16 +358,28 @@ class MainViewModel(
 
     fun retrySearch() = search(query)
 
-    fun openComic(comic: ComicSummary) {
+    fun openComic(comic: ComicSummary, resumeChapterId: String? = null) {
         navigationJob?.cancel()
         invalidateReaderSession()
+        retryComic = comic
+        retryChapterId = resumeChapterId
         navigationJob = viewModelScope.launch {
             isLoading = true
             errorMessage = null
             actionMessage = null
             savedOverride = null
             try {
-                val detail = registry.require(comic.sourceId).detail(comic.id).also {
+                val detail = withTimeoutOrNull(8_000) {
+                    supervisorScope {
+                        async(sourceDispatcher, start = CoroutineStart.DEFAULT) {
+                            registry.require(comic.sourceId).detail(comic.id)
+                        }.await()
+                    }
+                }
+                    ?: run {
+                        throw IllegalStateException("漫画详情请求超时")
+                    }
+                detail.also {
                     require(it.summary.sourceId == comic.sourceId && it.summary.id == comic.id) {
                         "漫画源返回了不属于当前结果的漫画详情"
                     }
@@ -314,12 +400,32 @@ class MainViewModel(
                 detail.summary.coverUrl?.let { coverUrl ->
                     viewModelScope.launch { loadCover(coverUrl) }
                 }
+                if (resumeChapterId != null) {
+                    val chapter = detail.chapters.firstOrNull { it.id == resumeChapterId }
+                        ?: detail.chapters.firstOrNull()
+                    if (chapter != null) {
+                        // The detail load has completed. Release the current
+                        // navigation job before handing control to the reader
+                        // so opening history cannot cancel itself.
+                        navigationJob = null
+                        openChapter(chapter)
+                        retryComic = null
+                        retryChapterId = null
+                        return@launch
+                    }
+                }
+                retryComic = null
+                retryChapterId = null
             } catch (sourceError: Throwable) {
                 if (sourceError is CancellationException) throw sourceError
                 errorMessage = "打开漫画失败，请检查数据源配置后重试"
             }
             isLoading = false
         }
+    }
+
+    fun retryOpenComic() {
+        retryComic?.let { openComic(it, retryChapterId) }
     }
 
     fun openChapter(chapter: Chapter) {
@@ -580,6 +686,93 @@ class MainViewModel(
         navigateTo(AppScreen.LOCAL_READER)
     }
 
+    fun openHistory(item: ReadingHistoryItem) {
+        openComic(item.toSummary(), resumeChapterId = item.chapterId)
+    }
+
+    fun selectLibraryTab(tab: LibraryTab) {
+        libraryTab = tab
+        libraryPreferences.edit().putString(KEY_LIBRARY_TAB, tab.name).apply()
+    }
+
+    fun selectOnlineShelfSection(section: OnlineShelfSection) {
+        onlineShelfSection = section
+        libraryPreferences.edit().putString(KEY_ONLINE_SECTION, section.name).apply()
+    }
+
+    fun selectLocalViewMode(mode: LocalViewMode) {
+        localViewMode = mode
+        libraryPreferences.edit().putString(KEY_LOCAL_VIEW, mode.name).apply()
+    }
+
+    fun selectLocalFilter(filter: LocalFilter) {
+        localFilter = filter
+        if (filter != LocalFilter.ALL) selectedLocalCategoryId = null
+        libraryPreferences.edit().putString(KEY_LOCAL_FILTER, filter.name).apply()
+    }
+
+    fun selectLocalCategory(categoryId: String?) {
+        selectedLocalCategoryId = categoryId
+        if (categoryId != null) localFilter = LocalFilter.ALL
+    }
+
+    fun selectLocalSort(sort: LocalSort) {
+        localSort = sort
+        libraryPreferences.edit().putString(KEY_LOCAL_SORT, sort.name).apply()
+    }
+
+    fun toggleLocalSortDirection() {
+        localSortAscending = !localSortAscending
+        libraryPreferences.edit().putBoolean(KEY_LOCAL_SORT_ASCENDING, localSortAscending).apply()
+    }
+
+    fun createLocalCategory(name: String) {
+        viewModelScope.launch {
+            val category = localComicRepository.createCategory(name)
+            actionMessage = if (category == null) {
+                failureMessage("分类名称不能为空")
+            } else {
+                infoMessage("已创建分类：${category.name}")
+            }
+        }
+    }
+
+    fun renameLocalCategory(category: LocalCategory, name: String) {
+        viewModelScope.launch {
+            val renamed = localComicRepository.renameCategory(category.id, name)
+            actionMessage = if (renamed == null) {
+                failureMessage("分类重命名失败，请重试")
+            } else {
+                infoMessage("分类已重命名")
+            }
+        }
+    }
+
+    fun deleteLocalCategory(category: LocalCategory) {
+        viewModelScope.launch {
+            localComicRepository.deleteCategory(category.id)
+            if (selectedLocalCategoryId == category.id) selectedLocalCategoryId = null
+            actionMessage = infoMessage("已删除分类：${category.name}")
+        }
+    }
+
+    fun setLocalCategory(comic: LocalComic, category: LocalCategory, included: Boolean) {
+        viewModelScope.launch {
+            localComicRepository.setCategoryMembership(comic.id, category.id, included)
+        }
+    }
+
+    fun clearOnlineHistory() {
+        viewModelScope.launch {
+            try {
+                library.clearHistory()
+                actionMessage = infoMessage("阅读历史已清空")
+            } catch (_: Throwable) {
+                actionMessage = failureMessage("清空历史失败，请重试")
+            }
+        }
+    }
+
     fun toggleReaderChrome() {
         readerChromeVisible = !readerChromeVisible
     }
@@ -609,6 +802,7 @@ class MainViewModel(
         readerProgressJob?.cancel()
         readerProgressJob = viewModelScope.launch {
             try {
+                delay(250)
                 readerProgressMutex.withLock {
                     withContext(NonCancellable) {
                         library.updateProgress(chapter, pageToPersist, totalPages)
@@ -623,6 +817,24 @@ class MainViewModel(
                 if (generation == readerGeneration && selectedChapter?.id == chapter.id) {
                     errorMessage = "阅读进度保存失败，请稍后重试"
                 }
+            }
+        }
+    }
+
+    /** Flush the latest online position when leaving a reader or changing chapter. */
+    fun flushReadingProgress() {
+        val chapter = selectedChapter ?: return
+        val totalPages = pages.size
+        val pageToPersist = readerPage.coerceIn(1, totalPages.coerceAtLeast(1))
+        readerProgressJob?.cancel()
+        readerProgressJob = null
+        viewModelScope.launch(NonCancellable) {
+            try {
+                readerProgressMutex.withLock {
+                    library.updateProgress(chapter, pageToPersist, totalPages)
+                }
+            } catch (_: Throwable) {
+                // Leaving the reader must never block navigation.
             }
         }
     }
@@ -891,6 +1103,12 @@ class MainViewModel(
     }
 
     fun showLibrary() {
+        selectLibraryTab(LibraryTab.ONLINE)
+        showRoot(AppScreen.LIBRARY)
+    }
+
+    fun showLocalLibrary() {
+        selectLibraryTab(LibraryTab.LOCAL)
         showRoot(AppScreen.LIBRARY)
     }
 
@@ -910,6 +1128,7 @@ class MainViewModel(
             readerChromeVisible = true
         }
         if (screen == AppScreen.READER || screen == AppScreen.WEB_READER) {
+            flushReadingProgress()
             invalidateReaderSession()
         }
         if (cancelWebReader) actionMessage = infoMessage("章节加载已取消")
@@ -1116,6 +1335,12 @@ class MainViewModel(
 
     companion object {
         private const val MAX_IMAGE_RESPONSE_BYTES = 24L * 1024L * 1024L
+        private const val KEY_LIBRARY_TAB = "library_tab"
+        private const val KEY_ONLINE_SECTION = "online_section"
+        private const val KEY_LOCAL_VIEW = "local_view"
+        private const val KEY_LOCAL_FILTER = "local_filter"
+        private const val KEY_LOCAL_SORT = "local_sort"
+        private const val KEY_LOCAL_SORT_ASCENDING = "local_sort_ascending"
         fun factory(context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {

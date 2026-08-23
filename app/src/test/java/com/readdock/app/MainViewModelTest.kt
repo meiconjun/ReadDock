@@ -273,6 +273,30 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `opening online history resumes the saved chapter instead of only opening detail`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val comic = viewModel.results.first { it.sourceId == SyntheticComicSource.SOURCE_ID }
+        viewModel.openComic(comic)
+        advanceUntilIdle()
+        val chapter = viewModel.selectedDetail!!.chapters.first()
+        viewModel.openChapter(chapter)
+        advanceUntilIdle()
+        viewModel.updateReadingProgress(3)
+        advanceUntilIdle()
+
+        val history = repository.history.value.single()
+        val reopened = createViewModel()
+        advanceUntilIdle()
+        reopened.openHistory(history)
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.READER, reopened.screen)
+        assertEquals(history.chapterId, reopened.selectedChapter?.id)
+        assertEquals(3, reopened.readerPage)
+    }
+
+    @Test
     fun `back stack returns reader to detail and rejects a foreign chapter`() = runTest {
         val viewModel = createViewModel()
         advanceUntilIdle()

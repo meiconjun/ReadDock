@@ -11,9 +11,10 @@ import androidx.room.RoomDatabase
         ChapterEntity::class,
         LibraryEntryEntity::class,
         ReadingProgressEntity::class,
-        LocalComicEntity::class
+        LocalComicEntity::class,
+        LocalCategoryEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class ReadDockDatabase : RoomDatabase() {
@@ -25,7 +26,7 @@ abstract class ReadDockDatabase : RoomDatabase() {
                 context.applicationContext,
                 ReadDockDatabase::class.java,
                 "readdock.db"
-            ).addMigrations(MIGRATION_1_2).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
@@ -48,6 +49,24 @@ abstract class ReadDockDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_local_comics_fileHash ON local_comics(fileHash)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_comics ADD COLUMN hasBeenOpened INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_comics ADD COLUMN completed INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_comics ADD COLUMN lastReadAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE local_comics ADD COLUMN categoryIds TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_categories (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
             }
         }
     }

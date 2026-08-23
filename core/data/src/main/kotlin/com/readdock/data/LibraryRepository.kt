@@ -4,7 +4,10 @@ import com.readdock.source.api.Chapter
 import com.readdock.source.api.ComicDetail
 import com.readdock.source.api.ComicSummary
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 data class LibraryComic(
     val sourceId: String,
@@ -68,7 +71,17 @@ data class LocalComic(
     val createdAt: Long,
     val updatedAt: Long,
     val fileSize: Long,
-    val fileHash: String
+    val fileHash: String,
+    val hasBeenOpened: Boolean = false,
+    val completed: Boolean = false,
+    val lastReadAt: Long = 0L,
+    val categoryIds: List<String> = emptyList()
+)
+
+data class LocalCategory(
+    val id: String,
+    val name: String,
+    val createdAt: Long
 )
 
 interface LocalComicRepository {
@@ -78,6 +91,12 @@ interface LocalComicRepository {
     suspend fun insert(comic: LocalComic)
     suspend fun updateProgress(id: String, currentPage: Int): LocalComic?
     suspend fun delete(id: String)
+
+    fun observeCategories(): Flow<List<LocalCategory>> = flowOf(emptyList())
+    suspend fun createCategory(name: String): LocalCategory? = null
+    suspend fun renameCategory(id: String, name: String): LocalCategory? = null
+    suspend fun deleteCategory(id: String) = Unit
+    suspend fun setCategoryMembership(comicId: String, categoryId: String, included: Boolean) = Unit
 }
 
 interface LibraryRepository {
@@ -102,6 +121,8 @@ interface LibraryRepository {
     ): ReadingProgress
 
     suspend fun getProgress(chapter: Chapter): ReadingProgress?
+
+    suspend fun clearHistory() = Unit
 }
 
 class RoomLibraryRepository(
@@ -192,6 +213,10 @@ class RoomLibraryRepository(
 
     override suspend fun getProgress(chapter: Chapter): ReadingProgress? =
         dao.findProgress(chapter.sourceId, chapter.comicId, chapter.id)?.toProgress()
+
+    override suspend fun clearHistory() {
+        dao.deleteAllHistory()
+    }
 }
 
 class RoomLocalComicRepository(
@@ -218,12 +243,51 @@ class RoomLocalComicRepository(
     override suspend fun updateProgress(id: String, currentPage: Int): LocalComic? {
         val comic = dao.findLocalComic(id) ?: return null
         val page = currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))
-        dao.updateLocalProgress(id, page, clock())
+        dao.updateLocalProgress(id, page, clock(), page >= comic.pageCount.coerceAtLeast(1))
         return dao.findLocalComic(id)?.toLocalComic()
     }
 
     override suspend fun delete(id: String) {
         dao.deleteLocalComic(id)
+    }
+
+    override fun observeCategories(): Flow<List<LocalCategory>> =
+        dao.observeLocalCategories().map { rows -> rows.map(LocalCategoryEntity::toLocalCategory) }
+
+    override suspend fun createCategory(name: String): LocalCategory? {
+        val normalized = name.trim()
+        if (normalized.isEmpty()) return null
+        val category = LocalCategory(
+            id = "category-${UUID.randomUUID()}",
+            name = normalized,
+            createdAt = clock()
+        )
+        dao.insertLocalCategory(category.toEntity())
+        return category
+    }
+
+    override suspend fun renameCategory(id: String, name: String): LocalCategory? {
+        val normalized = name.trim()
+        val current = dao.findLocalCategory(id) ?: return null
+        if (normalized.isEmpty()) return current.toLocalCategory()
+        val renamed = current.copy(name = normalized)
+        dao.updateLocalCategory(renamed)
+        return renamed.toLocalCategory()
+    }
+
+    override suspend fun deleteCategory(id: String) {
+        dao.observeLocalComics().first().forEach { comic ->
+            val ids = comic.categoryIds.splitIds().filterNot { it == id }.joinToString(CATEGORY_SEPARATOR)
+            dao.updateLocalComicCategories(comic.id, ids)
+        }
+        dao.deleteLocalCategory(id)
+    }
+
+    override suspend fun setCategoryMembership(comicId: String, categoryId: String, included: Boolean) {
+        val comic = dao.findLocalComic(comicId) ?: return
+        val ids = comic.categoryIds.splitIds().toMutableSet()
+        if (included) ids += categoryId else ids -= categoryId
+        dao.updateLocalComicCategories(comicId, ids.joinToString(CATEGORY_SEPARATOR))
     }
 }
 
@@ -239,7 +303,11 @@ private fun LocalComic.toEntity() = LocalComicEntity(
     createdAt = createdAt,
     updatedAt = updatedAt,
     fileSize = fileSize,
-    fileHash = fileHash
+    fileHash = fileHash,
+    hasBeenOpened = hasBeenOpened,
+    completed = completed,
+    lastReadAt = lastReadAt,
+    categoryIds = categoryIds.joinToString(CATEGORY_SEPARATOR)
 )
 
 private fun LocalComicEntity.toLocalComic() = LocalComic(
@@ -254,8 +322,16 @@ private fun LocalComicEntity.toLocalComic() = LocalComic(
     createdAt = createdAt,
     updatedAt = updatedAt,
     fileSize = fileSize,
-    fileHash = fileHash
+    fileHash = fileHash,
+    hasBeenOpened = hasBeenOpened,
+    completed = completed,
+    lastReadAt = lastReadAt,
+    categoryIds = categoryIds.splitIds()
 )
+
+private fun LocalCategory.toEntity() = LocalCategoryEntity(id, name, createdAt)
+
+private fun LocalCategoryEntity.toLocalCategory() = LocalCategory(id, name, createdAt)
 
 private fun ComicSummary.toEntity(
     now: Long,
@@ -320,3 +396,7 @@ private fun String.splitTags(): List<String> =
     if (isEmpty()) emptyList() else split(TAG_SEPARATOR)
 
 private const val TAG_SEPARATOR = "\u001F"
+private const val CATEGORY_SEPARATOR = "\u001E"
+
+private fun String.splitIds(): List<String> =
+    if (isEmpty()) emptyList() else split(CATEGORY_SEPARATOR).filter(String::isNotBlank)
