@@ -17,6 +17,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,11 +27,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,6 +58,7 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
@@ -64,6 +68,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.Image
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +78,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -96,6 +102,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -231,7 +238,10 @@ fun ReadDockApp() {
                 viewModel.screen == AppScreen.LIBRARY ||
                 viewModel.screen == AppScreen.SOURCES
             ) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp
+                ) {
                     NavigationBarItem(
                         selected = viewModel.screen == AppScreen.SEARCH,
                         onClick = viewModel::showSearch,
@@ -646,31 +656,45 @@ private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("发现漫画", style = MaterialTheme.typography.headlineMedium)
+                    Text("发现", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "从已安装的数据源中搜索，并打开漫画详情。",
+                        "在已启用的数据源中搜索漫画",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("搜索漫画") }
-                    )
-                    Button(
-                        onClick = { viewModel.search(input) },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !viewModel.isLoading
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
-                        Text("搜索")
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("搜索漫画") }
+                        )
+                        Button(
+                            onClick = { viewModel.search(input) },
+                            enabled = !viewModel.isLoading,
+                            modifier = Modifier.height(56.dp),
+                            shape = MaterialTheme.shapes.small,
+                            contentPadding = PaddingValues(horizontal = 16.dp)
+                        ) {
+                            Text("搜索")
+                        }
                     }
                 }
             }
@@ -783,43 +807,53 @@ private fun LibraryScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 16.dp, top = 18.dp, end = 16.dp, bottom = 32.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 28.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    if (viewModel.libraryTab == LibraryTab.ONLINE) "书架" else "本地漫画",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text(
-                    if (viewModel.libraryTab == LibraryTab.ONLINE) {
-                        "收藏和阅读历史会按数据源分别保存，阅读位置会自动恢复。"
+            LibraryPageHeader(
+                title = if (viewModel.libraryTab == LibraryTab.ONLINE) "书架" else "本地",
+                supporting = if (viewModel.libraryTab == LibraryTab.ONLINE) {
+                    "按数据源保存收藏与阅读进度"
+                } else {
+                    "设备内的漫画文件与阅读进度"
+                },
+                count = if (viewModel.libraryTab == LibraryTab.ONLINE) {
+                    if (viewModel.onlineShelfSection == OnlineShelfSection.FAVORITES) {
+                        "${libraryItems.size} 部收藏"
                     } else {
-                        "本地文件只保存在设备内，支持分类、排序、筛选和继续阅读。"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                        "${readingHistory.size} 条记录"
+                    }
+                } else {
+                    "${sortedLocalComics.size} 部漫画"
+                }
+            )
         }
         if (viewModel.libraryTab == LibraryTab.ONLINE) {
             item {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    ShelfSegment(
-                        firstLabel = "收藏",
-                        secondLabel = "历史",
-                        firstSelected = viewModel.onlineShelfSection == OnlineShelfSection.FAVORITES,
-                        onFirst = { viewModel.selectOnlineShelfSection(OnlineShelfSection.FAVORITES) },
-                        onSecond = { viewModel.selectOnlineShelfSection(OnlineShelfSection.HISTORY) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (viewModel.onlineShelfSection == OnlineShelfSection.HISTORY &&
-                        readingHistory.isNotEmpty()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { showClearHistory = true }) { Text("清空") }
+                        ShelfSegment(
+                            firstLabel = "收藏",
+                            secondLabel = "历史",
+                            firstSelected = viewModel.onlineShelfSection == OnlineShelfSection.FAVORITES,
+                            onFirst = { viewModel.selectOnlineShelfSection(OnlineShelfSection.FAVORITES) },
+                            onSecond = { viewModel.selectOnlineShelfSection(OnlineShelfSection.HISTORY) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (viewModel.onlineShelfSection == OnlineShelfSection.HISTORY &&
+                            readingHistory.isNotEmpty()
+                        ) {
+                            TextButton(onClick = { showClearHistory = true }) { Text("清空") }
+                        }
                     }
                 }
             }
@@ -863,43 +897,13 @@ private fun LibraryScreen(
             }
         } else {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { singlePicker.launch(arrayOf("*/*")) },
-                                modifier = Modifier.weight(1f),
-                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                            ) { Text("导入本地文件") }
-                            OutlinedButton(
-                                onClick = { showCategoryManager = true },
-                                modifier = Modifier.weight(1f)
-                            ) { Text("管理分类") }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { multipleImagePicker.launch("image/*") },
-                                modifier = Modifier.weight(1f),
-                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                            ) { Text("多选图片") }
-                            OutlinedButton(
-                                onClick = { folderPicker.launch(null) },
-                                modifier = Modifier.weight(1f),
-                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                            ) { Text("导入文件夹") }
-                        }
-                    }
-                }
+                LocalImportToolbar(
+                    busy = viewModel.localImportState.status == LocalImportStatus.LOADING,
+                    onImportFile = { singlePicker.launch(arrayOf("*/*")) },
+                    onImportImages = { multipleImagePicker.launch("image/*") },
+                    onImportFolder = { folderPicker.launch(null) },
+                    onManageCategories = { showCategoryManager = true }
+                )
             }
             item {
                 when (viewModel.localImportState.status) {
@@ -927,55 +931,21 @@ private fun LibraryScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("本地漫画", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    IconButton(
-                        onClick = { viewModel.selectLocalViewMode(LocalViewMode.LIST) },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                if (viewModel.localViewMode == LocalViewMode.LIST) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    Color.Transparent
-                                },
-                                MaterialTheme.shapes.small
-                            )
-                    ) {
-                        Icon(
-                            Icons.Default.ViewList,
-                            contentDescription = "列表视图",
-                            tint = if (viewModel.localViewMode == LocalViewMode.LIST) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("全部漫画", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${sortedLocalComics.size} / ${localComics.size} 部",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(
-                        onClick = { viewModel.selectLocalViewMode(LocalViewMode.GRID) },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                if (viewModel.localViewMode == LocalViewMode.GRID) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    Color.Transparent
-                                },
-                                MaterialTheme.shapes.small
-                            )
-                    ) {
-                        Icon(
-                            Icons.Default.GridView,
-                            contentDescription = "网格视图",
-                            tint = if (viewModel.localViewMode == LocalViewMode.GRID) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
+                    ViewModeToggle(
+                        mode = viewModel.localViewMode,
+                        onList = { viewModel.selectLocalViewMode(LocalViewMode.LIST) },
+                        onGrid = { viewModel.selectLocalViewMode(LocalViewMode.GRID) }
+                    )
                 }
             }
             item {
@@ -984,27 +954,23 @@ private fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
+                    CompactActionButton(
+                        icon = { Icon(Icons.Default.FilterList, contentDescription = null) },
+                        label = localFilterLabel(viewModel.localFilter),
                         onClick = {
                             viewModel.selectLocalFilter(
                                 nextLocalFilter(viewModel.localFilter)
                             )
                         },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.FilterList, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text(localFilterLabel(viewModel.localFilter))
-                    }
+                    )
                     Box(modifier = Modifier.weight(1f)) {
-                        OutlinedButton(
+                        CompactActionButton(
+                            icon = { Icon(Icons.Default.Sort, contentDescription = null) },
+                            label = localSortLabel(viewModel.localSort),
                             onClick = { sortMenuExpanded = true },
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Sort, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text(localSortLabel(viewModel.localSort))
-                        }
+                        )
                         DropdownMenu(
                             expanded = sortMenuExpanded,
                             onDismissRequest = { sortMenuExpanded = false }
@@ -1025,12 +991,11 @@ private fun LibraryScreen(
                             }
                         }
                     }
-                    IconButton(
+                    CompactActionButton(
+                        label = if (viewModel.localSortAscending) "升序" else "降序",
                         onClick = viewModel::toggleLocalSortDirection,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Text(if (viewModel.localSortAscending) "升" else "降")
-                    }
+                        modifier = Modifier.weight(0.72f)
+                    )
                 }
             }
             item {
@@ -1040,12 +1005,11 @@ private fun LibraryScreen(
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
-                        OutlinedButton(
+                        CompactActionButton(
+                            label = activeCategory?.name ?: "全部分类",
                             onClick = { categoryMenuExpanded = true },
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(activeCategory?.name ?: "全部分类")
-                        }
+                        )
                         DropdownMenu(
                             expanded = categoryMenuExpanded,
                             onDismissRequest = { categoryMenuExpanded = false }
@@ -1070,6 +1034,7 @@ private fun LibraryScreen(
                     }
                     Text(
                         "${sortedLocalComics.size}/${localComics.size}",
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -1208,6 +1173,212 @@ private fun LibraryScreen(
 }
 
 @Composable
+private fun LibraryPageHeader(title: String, supporting: String, count: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = androidx.compose.ui.Alignment.Bottom
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            count,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.secondary
+        )
+    }
+}
+
+@Composable
+private fun LocalImportToolbar(
+    busy: Boolean,
+    onImportFile: () -> Unit,
+    onImportImages: () -> Unit,
+    onImportFolder: () -> Unit,
+    onManageCategories: () -> Unit
+) {
+    var moreExpanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = onImportFile,
+                enabled = !busy,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp),
+                shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 12.dp)
+            ) {
+                Text("导入漫画", maxLines = 1)
+            }
+            CompactActionButton(
+                label = "分类",
+                onClick = onManageCategories,
+                modifier = Modifier.weight(0.72f)
+            )
+            Box {
+                CompactActionButton(
+                    icon = { Icon(Icons.Default.MoreVert, contentDescription = null) },
+                    label = "更多",
+                    onClick = { moreExpanded = true },
+                    modifier = Modifier.width(84.dp)
+                )
+                DropdownMenu(
+                    expanded = moreExpanded,
+                    onDismissRequest = { moreExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("多选图片") },
+                        onClick = {
+                            moreExpanded = false
+                            onImportImages()
+                        },
+                        enabled = !busy
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导入文件夹") },
+                        onClick = {
+                            moreExpanded = false
+                            onImportFolder()
+                        },
+                        enabled = !busy
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: (@Composable (() -> Unit))? = null,
+    enabled: Boolean = true
+) {
+    Surface(
+        modifier = modifier
+            .heightIn(min = 42.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = MaterialTheme.shapes.small,
+        color = if (enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(
+            1.dp,
+            if (enabled) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            icon?.invoke()
+            if (icon != null) Spacer(Modifier.size(6.dp))
+            Text(
+                label,
+                maxLines = 1,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+    }
+}
+
+@Composable
+private fun ViewModeToggle(
+    mode: LocalViewMode,
+    onList: () -> Unit,
+    onGrid: () -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(modifier = Modifier.padding(2.dp)) {
+            ViewModeButton(
+                selected = mode == LocalViewMode.LIST,
+                imageVector = Icons.Default.ViewList,
+                contentDescription = "列表视图",
+                onClick = onList
+            )
+            ViewModeButton(
+                selected = mode == LocalViewMode.GRID,
+                imageVector = Icons.Default.GridView,
+                contentDescription = "网格视图",
+                onClick = onGrid
+            )
+        }
+    }
+}
+
+@Composable
+private fun ViewModeButton(
+    selected: Boolean,
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(38.dp)
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                MaterialTheme.shapes.extraSmall
+            )
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun ProgressRail(progress: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .background(
+                MaterialTheme.colorScheme.surfaceContainerHighest,
+                MaterialTheme.shapes.extraSmall
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .background(MaterialTheme.colorScheme.secondary, MaterialTheme.shapes.extraSmall)
+        )
+    }
+}
+
+@Composable
 private fun ShelfSegment(
     firstLabel: String,
     secondLabel: String,
@@ -1220,7 +1391,7 @@ private fun ShelfSegment(
         selectedTabIndex = if (firstSelected) 0 else 1,
         modifier = modifier.fillMaxWidth(),
         containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary
+        contentColor = MaterialTheme.colorScheme.secondary
     ) {
         Tab(
             selected = firstSelected,
@@ -1238,25 +1409,120 @@ private fun ShelfSegment(
 }
 
 @Composable
+private fun SourceBadge(label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.secondary,
+        shape = MaterialTheme.shapes.extraSmall,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f))
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun StatusBadge(label: String) {
+    val active = label == "阅读中"
+    Surface(
+        color = if (active) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.extraSmall,
+        border = if (active) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f))
+        } else {
+            null
+        }
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+@Composable
+private fun CoverMonogram(title: String, modifier: Modifier = Modifier.size(64.dp)) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.small
+    ) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(5.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.secondary)
+            )
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
+                Text(
+                    title.take(1),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun HistoryShelfRow(
     history: ReadingHistoryItem,
     sourceLabel: String,
     onClick: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        ListItem(
-            headlineContent = { Text(history.comicTitle) },
-            supportingContent = {
+    val progress = history.currentPage.toFloat() / history.totalPages.coerceAtLeast(1).toFloat()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            CoverMonogram(history.comicTitle, Modifier.size(64.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(history.comicTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                SourceBadge(sourceLabel)
                 Text(
-                    "来源 · $sourceLabel\n" +
-                        "第 ${history.chapterNumber} 话 · ${history.chapterTitle}\n" +
-                        "第 ${history.currentPage}/${history.totalPages} 页 · ${readingTimeLabel(history.lastReadAt)}"
+                    "第 ${history.chapterNumber} 话 · ${history.chapterTitle}",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            },
-            trailingContent = {
-                Text(if (history.completed) "已读完" else "继续", color = MaterialTheme.colorScheme.primary)
+                ProgressRail(progress)
+                Text(
+                    "第 ${history.currentPage}/${history.totalPages} 页 · ${readingTimeLabel(history.lastReadAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        )
+            Text(
+                if (history.completed) "已读完" else "继续",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
     }
 }
 
@@ -1267,28 +1533,53 @@ private fun LocalComicListCard(
     onAssign: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        ListItem(
-            leadingContent = { LocalCover(comic.coverPath, comic.title, Modifier.size(64.dp)) },
-            headlineContent = { Text(comic.title) },
-            supportingContent = {
+    val progress = comic.currentPage.toFloat() / comic.pageCount.coerceAtLeast(1).toFloat()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            LocalCover(comic.coverPath, comic.title, Modifier.size(72.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(comic.title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StatusBadge(localStatusLabel(comic))
+                    Text(
+                        comic.format,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ProgressRail(progress)
                 Text(
-                    "${localStatusLabel(comic)} · ${comic.format} · " +
-                        "${comic.currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))}/${comic.pageCount} 页 · " +
-                        localLastReadLabel(comic)
+                    "${comic.currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))}/${comic.pageCount} 页 · ${localLastReadLabel(comic)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            },
-            trailingContent = {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    IconButton(onClick = onAssign) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "管理分类")
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "删除本地漫画")
-                    }
+            }
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                IconButton(onClick = onAssign, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "管理分类")
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "删除本地漫画")
                 }
             }
-        )
+        }
     }
 }
 
@@ -1300,11 +1591,20 @@ private fun LocalComicGridCard(
     onAssign: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(modifier = modifier.clickable(onClick = onClick)) {
+    val progress = comic.currentPage.toFloat() / comic.pageCount.coerceAtLeast(1).toFloat()
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.medium
+    ) {
         Column {
-            LocalCover(comic.coverPath, comic.title, Modifier.fillMaxWidth().height(180.dp))
-            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LocalCover(comic.coverPath, comic.title, Modifier.fillMaxWidth().height(156.dp))
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(comic.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
+                StatusBadge(localStatusLabel(comic))
+                ProgressRail(progress)
                 Text(
                     "${localStatusLabel(comic)} · ${comic.currentPage}/${comic.pageCount} 页",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2240,29 +2540,36 @@ private fun ComicRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = MaterialTheme.shapes.medium
     ) {
-        ListItem(
-            headlineContent = { Text(comic.title) },
-            supportingContent = {
-                Text(
-                    buildList {
-                        add("来源 · $sourceLabel")
-                        comic.tags.joinToString(" · ").takeIf { it.isNotBlank() }?.let(::add)
-                    }.joinToString("\n")
-                )
-            },
-            leadingContent = {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
-                ) {
-                    Text(comic.title.take(1), style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            CoverMonogram(comic.title)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(comic.title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                SourceBadge(sourceLabel)
+                comic.tags.joinToString(" · ").takeIf { it.isNotBlank() }?.let { tags ->
+                    Text(
+                        tags,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
                 }
             }
-        )
+        }
     }
 }
 
@@ -2304,11 +2611,16 @@ private fun ScreenSectionHeading(title: String, supporting: String? = null) {
 
 @Composable
 private fun EmptyStateCard(title: String, message: String) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -2319,14 +2631,19 @@ private fun EmptyStateCard(title: String, message: String) {
 
 @Composable
 private fun InlineMessageCard(message: String, tone: MessageTone) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
         Text(
             message,
-            modifier = Modifier.padding(16.dp),
-            color = if (tone == MessageTone.ERROR) {
+            modifier = Modifier.padding(12.dp),
+                color = if (tone == MessageTone.ERROR) {
                 MaterialTheme.colorScheme.error
             } else {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.secondary
             }
         )
     }
@@ -2335,9 +2652,14 @@ private fun InlineMessageCard(message: String, tone: MessageTone) {
 @Composable
 private fun StatusMessage(viewModel: MainViewModel) {
     when {
-        viewModel.isLoading -> Card(modifier = Modifier.fillMaxWidth()) {
+        viewModel.isLoading -> Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
             Row(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(14.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -2345,7 +2667,12 @@ private fun StatusMessage(viewModel: MainViewModel) {
                 Text("正在加载漫画…")
             }
         }
-        viewModel.errorMessage != null -> Card(modifier = Modifier.fillMaxWidth()) {
+        viewModel.errorMessage != null -> Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
             Row(
                 modifier = Modifier.padding(start = 16.dp, end = 8.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
@@ -2383,7 +2710,7 @@ private fun InlineMessage(message: UiMessage) {
         color = if (message.tone == MessageTone.ERROR) {
             MaterialTheme.colorScheme.error
         } else {
-            MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.secondary
         }
     )
 }
