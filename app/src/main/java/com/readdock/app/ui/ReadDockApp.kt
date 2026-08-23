@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,6 +57,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -80,6 +83,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
@@ -598,72 +602,77 @@ private val PURE_IMAGE_READER_SCRIPT = """
 private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
     var input by remember(viewModel.query) { mutableStateOf(viewModel.query) }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
-            .padding(horizontal = 16.dp)
+            .padding(padding),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Spacer(Modifier.height(20.dp))
-        Text("ReadDock", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "可扩展的数据源漫画阅读器 · Beta",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("搜索漫画") }
-            )
-            Button(
-                onClick = { viewModel.search(input) },
-                enabled = !viewModel.isLoading
-            ) {
-                Text("搜索")
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("发现漫画", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "从已安装的数据源中搜索，并打开漫画详情。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("搜索漫画") }
+                    )
+                    Button(
+                        onClick = { viewModel.search(input) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !viewModel.isLoading
+                    ) {
+                        Text("搜索")
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        StatusMessage(viewModel)
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
+        item { StatusMessage(viewModel) }
+        if (viewModel.results.isNotEmpty()) {
+            item {
+                ScreenSectionHeading("搜索结果", "${viewModel.results.size} 条结果 · 第 ${viewModel.searchPage} 页")
+            }
             items(viewModel.results, key = { comicUiKey(it) }) { comic ->
                 ComicRow(comic = comic, onClick = { viewModel.openComic(comic) })
             }
-            item {
+        }
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
-                    if (viewModel.searchPage > 1) {
-                        TextButton(
-                            onClick = viewModel::previousSearchPage,
-                            enabled = !viewModel.isLoading
-                        ) {
-                            Text("上一页")
-                        }
+                    OutlinedButton(
+                        onClick = viewModel::previousSearchPage,
+                        modifier = Modifier.weight(1f),
+                        enabled = viewModel.searchPage > 1 && !viewModel.isLoading
+                    ) {
+                        Text("上一页")
                     }
                     Text(
                         "第 ${viewModel.searchPage} 页",
-                        modifier = Modifier.padding(horizontal = 8.dp),
+                        modifier = Modifier.weight(0.7f),
+                        textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Button(
                         onClick = viewModel::nextSearchPage,
+                        modifier = Modifier.weight(1f),
                         enabled = !viewModel.isLoading
                     ) {
                         Text("下一页")
@@ -703,61 +712,88 @@ private fun LibraryScreen(
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Text("我的书架", style = MaterialTheme.typography.headlineMedium)
-                Button(
-                    onClick = { singlePicker.launch(arrayOf("*/*")) },
-                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("导入本地")
+                    Text("我的书架", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "管理本地漫画、在线收藏和最近阅读。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = { singlePicker.launch(arrayOf("*/*")) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                    ) {
+                        Text("导入本地文件")
+                    }
                 }
             }
         }
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TextButton(
-                    onClick = { multipleImagePicker.launch("image/*") },
-                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                ) { Text("多选图片") }
-                TextButton(
-                    onClick = { folderPicker.launch(null) },
-                    enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                ) { Text("导入文件夹") }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("更多导入方式", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { multipleImagePicker.launch("image/*") },
+                            modifier = Modifier.weight(1f),
+                            enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                        ) { Text("多选图片") }
+                        OutlinedButton(
+                            onClick = { folderPicker.launch(null) },
+                            modifier = Modifier.weight(1f),
+                            enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                        ) { Text("导入文件夹") }
+                    }
+                }
             }
+        }
+        item {
             when (viewModel.localImportState.status) {
-                LocalImportStatus.LOADING -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(viewModel.localImportState.message ?: "正在导入…")
+                LocalImportStatus.LOADING -> Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(viewModel.localImportState.message ?: "正在导入…")
+                    }
                 }
                 LocalImportStatus.SUCCESS -> viewModel.localImportState.message?.let {
-                    Text(it, color = MaterialTheme.colorScheme.primary)
+                    InlineMessageCard(it, MessageTone.INFO)
                 }
                 LocalImportStatus.EMPTY -> viewModel.localImportState.message?.let {
-                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    InlineMessageCard(it, MessageTone.INFO)
                 }
                 LocalImportStatus.ERROR -> viewModel.localImportState.message?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error)
+                    InlineMessageCard(it, MessageTone.ERROR)
                 }
                 LocalImportStatus.IDLE -> Unit
             }
         }
         item {
             Spacer(Modifier.height(8.dp))
-            Text("本地漫画", style = MaterialTheme.typography.titleLarge)
+            ScreenSectionHeading("本地漫画")
         }
         if (localComics.isEmpty()) {
             item {
-                Text(
-                    "本地书架为空。可以导入单个文件、多选图片或整个图片文件夹。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                EmptyStateCard(
+                    title = "还没有本地漫画",
+                    message = "可以导入单个文件、多选图片或整个图片文件夹。"
                 )
             }
         } else {
@@ -771,13 +807,13 @@ private fun LibraryScreen(
         }
         item {
             Spacer(Modifier.height(20.dp))
-            Text("在线收藏", style = MaterialTheme.typography.titleLarge)
+            ScreenSectionHeading("在线收藏")
         }
         if (libraryItems.isEmpty()) {
             item {
-                Text(
-                    "还没有收藏漫画。在线漫画收藏会独立保存在这里。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                EmptyStateCard(
+                    title = "还没有收藏",
+                    message = "在线漫画收藏会独立保存在这里。"
                 )
             }
         } else {
@@ -788,13 +824,13 @@ private fun LibraryScreen(
         }
         item {
             Spacer(Modifier.height(12.dp))
-            Text("阅读历史", style = MaterialTheme.typography.titleLarge)
+            ScreenSectionHeading("阅读历史")
         }
         if (readingHistory.isEmpty()) {
             item {
-                Text(
-                    "打开章节后，最近阅读的章节和进度会显示在这里。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                EmptyStateCard(
+                    title = "还没有阅读记录",
+                    message = "打开章节后，最近阅读的章节和进度会显示在这里。"
                 )
             }
         } else {
@@ -923,22 +959,27 @@ private fun SourcesScreen(
             .fillMaxSize()
             .padding(padding)
             .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Spacer(Modifier.height(20.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-        Text("数据源插件", style = MaterialTheme.typography.headlineMedium)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("数据源插件", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "导入受信任的插件包，扩展可用的数据源",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            Button(onClick = { picker.launch(arrayOf("application/json", "text/plain")) }) {
-                Text("导入插件")
+                Button(
+                    onClick = { picker.launch(arrayOf("application/json", "text/plain")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("导入插件")
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -946,50 +987,61 @@ private fun SourcesScreen(
             InlineMessage(it)
             Spacer(Modifier.height(8.dp))
         }
-        Text("插件仓库", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryUrl,
-            onValueChange = viewModel::updateRepositoryUrl,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("仓库索引 URL") }
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryKeyId,
-            onValueChange = viewModel::updateRepositoryKeyId,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("可信公钥 keyId") }
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = viewModel.repositoryPublicKey,
-            onValueChange = viewModel::updateRepositoryPublicKey,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 4,
-            label = { Text("RSA 公钥 Base64") }
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = viewModel::refreshRepository,
-                enabled = !viewModel.repositoryBusy
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("读取仓库")
-            }
-            TextButton(onClick = viewModel::clearRepositoryConfiguration) {
-                Text("清除配置")
-            }
-            if (viewModel.repositoryBusy) {
-                TextButton(onClick = viewModel::cancelRepositoryOperation) {
-                    Text("取消")
+                Text("插件仓库", style = MaterialTheme.typography.titleLarge)
+                OutlinedTextField(
+                    value = viewModel.repositoryUrl,
+                    onValueChange = viewModel::updateRepositoryUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("仓库索引 URL") }
+                )
+                OutlinedTextField(
+                    value = viewModel.repositoryKeyId,
+                    onValueChange = viewModel::updateRepositoryKeyId,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("可信公钥 keyId") }
+                )
+                OutlinedTextField(
+                    value = viewModel.repositoryPublicKey,
+                    onValueChange = viewModel::updateRepositoryPublicKey,
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4,
+                    label = { Text("RSA 公钥 Base64") }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = viewModel::refreshRepository,
+                        modifier = Modifier.weight(1f),
+                        enabled = !viewModel.repositoryBusy
+                    ) {
+                        Text("读取仓库")
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::clearRepositoryConfiguration,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("清除配置")
+                    }
+                }
+                if (viewModel.repositoryBusy) {
+                    TextButton(
+                        onClick = viewModel::cancelRepositoryOperation,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("取消读取")
+                    }
                 }
             }
         }
@@ -999,12 +1051,12 @@ private fun SourcesScreen(
         }
         if (viewModel.repositoryIndex != null) {
             Spacer(Modifier.height(16.dp))
-            Text("仓库插件", style = MaterialTheme.typography.titleLarge)
+            ScreenSectionHeading("仓库插件", "${viewModel.repositoryPlugins.size} 个可用插件")
             Spacer(Modifier.height(8.dp))
             if (viewModel.repositoryPlugins.isEmpty()) {
-                Text(
-                    "仓库当前没有可用插件。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                EmptyStateCard(
+                    title = "仓库暂无插件",
+                    message = "请检查仓库索引，或稍后重新读取。"
                 )
             } else {
                 val installedById = viewModel.installedPlugins.associateBy { it.id }
@@ -1016,28 +1068,32 @@ private fun SourcesScreen(
                             .fillMaxWidth()
                             .padding(bottom = 6.dp)
                     ) {
-                        ListItem(
-                            headlineContent = { Text(entry.name) },
-                            supportingContent = {
-                                Column {
-                                    Text("${entry.id} · v${entry.version}")
-                                    entry.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
-                                    if (entry.domains.isNotEmpty()) {
-                                        Text("域名：${entry.domains.joinToString("、")}")
-                                    }
-                                    if (entry.permissions.isNotEmpty()) {
-                                        Text(
-                                            "权限：${entry.permissions.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    if (entry.capabilities.isNotEmpty()) {
-                                        Text(
-                                            "能力：${entry.capabilities.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                }
-                            },
-                            trailingContent = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(entry.name, style = MaterialTheme.typography.titleMedium)
+                            Text("${entry.id} · v${entry.version}")
+                            entry.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
+                            if (entry.domains.isNotEmpty()) {
+                                Text("域名：${entry.domains.joinToString("、")}")
+                            }
+                            if (entry.permissions.isNotEmpty()) {
+                                Text(
+                                    "权限：${entry.permissions.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            if (entry.capabilities.isNotEmpty()) {
+                                Text(
+                                    "能力：${entry.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
                                 TextButton(
                                     onClick = { viewModel.installRepositoryPlugin(entry) },
                                     enabled = !viewModel.repositoryBusy &&
@@ -1046,14 +1102,14 @@ private fun SourcesScreen(
                                     Text(if (installed == null) "安装" else if (hasUpdate) "更新" else "已安装")
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
         }
         if (viewModel.availableUpdates.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text("可用更新", style = MaterialTheme.typography.titleMedium)
+            ScreenSectionHeading("可用更新", "${viewModel.availableUpdates.size} 个插件可以更新")
             viewModel.availableUpdates.forEach { update ->
                 Card(
                     modifier = Modifier
@@ -1075,12 +1131,12 @@ private fun SourcesScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("源健康状态", style = MaterialTheme.typography.titleLarge)
+        ScreenSectionHeading("源健康状态", "请求成功率和最近网络状态")
         Spacer(Modifier.height(8.dp))
         if (sourceHealth.isEmpty()) {
-            Text(
-                "尚无网络请求记录；打开需要网络的漫画源后会在这里显示。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            EmptyStateCard(
+                title = "尚无网络请求记录",
+                message = "打开需要网络的漫画源后，健康状态会在这里显示。"
             )
         } else {
             sourceHealth.values.sortedBy { it.sourceId }.forEach { health ->
@@ -1106,71 +1162,83 @@ private fun SourcesScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("数据源说明", style = MaterialTheme.typography.titleLarge)
-        Text(
-            "ReadDock Beta 不内置商业网站数据源。请只安装你有权使用、且符合目标网站条款和版权要求的插件。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text("数据源说明", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "ReadDock Beta 不内置商业网站数据源。请只安装你有权使用、且符合目标网站条款和版权要求的插件。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Spacer(Modifier.height(16.dp))
-        Text("已安装插件", style = MaterialTheme.typography.titleLarge)
+        ScreenSectionHeading("已安装插件", "管理启用状态、回滚和卸载")
         Spacer(Modifier.height(8.dp))
         if (viewModel.installedPlugins.isEmpty()) {
-            Text(
-                "还没有安装插件。请从受信任的外部仓库安装，或导入带签名的插件包。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            EmptyStateCard(
+                title = "还没有安装插件",
+                message = "请从受信任的外部仓库安装，或导入带签名的插件包。"
             )
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(viewModel.installedPlugins, key = { it.id }) { plugin ->
+                viewModel.installedPlugins.forEach { plugin ->
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        ListItem(
-                        headlineContent = { Text(plugin.name) },
-                            supportingContent = {
-                                Column {
-                                    Text("${plugin.id} · v${plugin.version}")
-                                    if (plugin.domains.isNotEmpty()) {
-                                        Text("域名：${plugin.domains.joinToString("、")}")
-                                    }
-                                    if (plugin.permissions.isNotEmpty()) {
-                                        Text(
-                                            "权限：${plugin.permissions.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    if (plugin.capabilities.isNotEmpty()) {
-                                        Text(
-                                            "能力：${plugin.capabilities.joinToString("、") { it.name.lowercase() }}"
-                                        )
-                                    }
-                                    Text(
-                                        "限速：${plugin.rateLimit.requestsPerMinute}/分钟，" +
-                                            "并发 ${plugin.rateLimit.concurrency}"
-                                    )
-                                    if (plugin.requiresUserInteraction) {
-                                        Text("需要用户交互")
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(plugin.name, style = MaterialTheme.typography.titleMedium)
+                            Text("${plugin.id} · v${plugin.version}")
+                            if (plugin.domains.isNotEmpty()) {
+                                Text("域名：${plugin.domains.joinToString("、")}")
+                            }
+                            if (plugin.permissions.isNotEmpty()) {
+                                Text(
+                                    "权限：${plugin.permissions.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            if (plugin.capabilities.isNotEmpty()) {
+                                Text(
+                                    "能力：${plugin.capabilities.joinToString("、") { it.name.lowercase() }}"
+                                )
+                            }
+                            Text(
+                                "限速：${plugin.rateLimit.requestsPerMinute}/分钟，" +
+                                    "并发 ${plugin.rateLimit.concurrency}"
+                            )
+                            if (plugin.requiresUserInteraction) {
+                                Text("需要用户交互")
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Text("启用")
+                                Switch(
+                                    checked = plugin.enabled,
+                                    onCheckedChange = { viewModel.setPluginEnabled(plugin.id, it) }
+                                )
+                                if (plugin.canRollback) {
+                                    TextButton(onClick = { viewModel.rollbackPlugin(plugin.id) }) {
+                                        Text("回滚")
                                     }
                                 }
-                            },
-                            trailingContent = {
-                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Switch(
-                                        checked = plugin.enabled,
-                                        onCheckedChange = { viewModel.setPluginEnabled(plugin.id, it) }
-                                    )
-                                    if (plugin.canRollback) {
-                                        TextButton(onClick = { viewModel.rollbackPlugin(plugin.id) }) {
-                                            Text("回滚")
-                                        }
-                                    }
-                                    TextButton(onClick = { viewModel.uninstallPlugin(plugin.id) }) {
-                                        Text("卸载")
-                                    }
+                                TextButton(onClick = { viewModel.uninstallPlugin(plugin.id) }) {
+                                    Text("卸载")
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -1195,29 +1263,50 @@ private fun DetailScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(detail.summary.title, style = MaterialTheme.typography.headlineSmall)
-                    Text("作者：${detail.author}")
-                }
-                IconButton(
-                    onClick = viewModel::toggleSaved,
-                    enabled = !viewModel.isSaving
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                        contentDescription = if (saved) "取消收藏" else "收藏"
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(detail.summary.title, style = MaterialTheme.typography.headlineSmall)
+                            Text("作者：${detail.author}")
+                            Text(
+                                detail.summary.tags.joinToString(" · ").ifBlank { detail.summary.sourceId },
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(
+                            onClick = viewModel::toggleSaved,
+                            enabled = !viewModel.isSaving
+                        ) {
+                            Icon(
+                                imageVector = if (saved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = if (saved) "取消收藏" else "收藏"
+                            )
+                        }
+                    }
                 }
             }
         }
         item {
-            ErrorNotice(viewModel.errorMessage)
-            viewModel.actionMessage?.let { InlineMessage(it) }
+            if (viewModel.errorMessage != null || viewModel.actionMessage != null) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ErrorNotice(viewModel.errorMessage)
+                        viewModel.actionMessage?.let { InlineMessage(it) }
+                    }
+                }
+            }
         }
         item {
             val coverBitmap = remember(viewModel.coverBytes) {
@@ -1225,36 +1314,46 @@ private fun DetailScreen(
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                 }
             }
-            if (coverBitmap != null) {
-                Image(
-                    bitmap = coverBitmap,
-                    contentDescription = "${detail.summary.title}封面",
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 300.dp),
-                    contentScale = ContentScale.Fit
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    if (coverBitmap != null) {
+                        Image(
+                            bitmap = coverBitmap,
+                            contentDescription = "${detail.summary.title}封面",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            Text(
+                                "${detail.summary.title}\n封面加载中或不可用",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                    Text("简介", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "${detail.summary.title}\n封面加载中或不可用",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        detail.description.ifBlank { "暂无简介" },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            Text(
-                detail.description.ifBlank { "暂无简介" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
         item {
-            Text("章节", style = MaterialTheme.typography.titleLarge)
+            ScreenSectionHeading("章节", "${detail.chapters.size} 话")
         }
         if (detail.chapters.isEmpty()) {
             item {
@@ -1569,24 +1668,78 @@ private fun sourceHealthLabel(health: SourceHealthSnapshot): String = when (heal
 }
 
 @Composable
+private fun ScreenSectionHeading(title: String, supporting: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        supporting?.let {
+            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EmptyStateCard(title: String, message: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun InlineMessageCard(message: String, tone: MessageTone) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            message,
+            modifier = Modifier.padding(16.dp),
+            color = if (tone == MessageTone.ERROR) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+        )
+    }
+}
+
+@Composable
 private fun StatusMessage(viewModel: MainViewModel) {
     when {
-        viewModel.isLoading -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            Spacer(Modifier.size(8.dp))
-            Text("正在加载漫画…")
-        }
-        viewModel.errorMessage != null -> Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            ErrorNotice(viewModel.errorMessage)
-            TextButton(onClick = viewModel::retrySearch, enabled = !viewModel.isLoading) {
-                Text("重试")
+        viewModel.isLoading -> Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("正在加载漫画…")
             }
         }
-        viewModel.results.isEmpty() -> Text(
-            "没有找到漫画，试试其他关键词。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        viewModel.errorMessage != null -> Card(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(start = 16.dp, end = 8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    ErrorNotice(viewModel.errorMessage)
+                }
+                TextButton(onClick = viewModel::retrySearch, enabled = !viewModel.isLoading) {
+                    Text("重试")
+                }
+            }
+        }
+        viewModel.results.isEmpty() -> EmptyStateCard(
+            title = "暂无搜索结果",
+            message = if (viewModel.query.isBlank()) {
+                "输入关键词后，可以从已安装的数据源中搜索漫画。"
+            } else {
+                "没有找到漫画，试试其他关键词。"
+            }
         )
     }
 }
