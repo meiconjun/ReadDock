@@ -23,6 +23,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,10 @@ fun LocalReaderScreen(
         factory = LocalReaderViewModel.factory(context, comicId)
     )
     val state = viewModel.state
+
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.flushProgress() }
+    }
 
     Column(
         modifier = Modifier

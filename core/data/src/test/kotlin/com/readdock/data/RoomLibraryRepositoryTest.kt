@@ -126,4 +126,64 @@ class RoomLibraryRepositoryTest {
         assertTrue(localRepository.observeLocalComics().first().isEmpty())
         assertEquals(null, localRepository.findByHash("sha256-test"))
     }
+
+    @Test
+    fun `local categories survive rename and delete without deleting comics`() = runBlocking {
+        val localRepository = RoomLocalComicRepository(database.libraryDao())
+        val comic = LocalComic(
+            id = "local-category-test",
+            title = "分类测试",
+            fileName = "category.cbz",
+            format = "CBZ",
+            localPath = "/data/category-test",
+            coverPath = null,
+            pageCount = 3,
+            currentPage = 1,
+            createdAt = 1L,
+            updatedAt = 1L,
+            fileSize = 100L,
+            fileHash = "category-hash"
+        )
+        localRepository.insert(comic)
+
+        val category = localRepository.createCategory("待读")!!
+        localRepository.setCategoryMembership(comic.id, category.id, included = true)
+        assertEquals(listOf(category.id), localRepository.findById(comic.id)?.categoryIds)
+
+        localRepository.renameCategory(category.id, "待读中")
+        assertEquals("待读中", localRepository.observeCategories().first().single().name)
+
+        localRepository.deleteCategory(category.id)
+        assertTrue(localRepository.observeCategories().first().isEmpty())
+        assertTrue(localRepository.findById(comic.id) != null)
+        assertTrue(localRepository.findById(comic.id)?.categoryIds.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `local progress marks comic opened and completed`() = runBlocking {
+        val localRepository = RoomLocalComicRepository(database.libraryDao())
+        val comic = LocalComic(
+            id = "local-status-test",
+            title = "状态测试",
+            fileName = "status.cbz",
+            format = "CBZ",
+            localPath = "/data/status-test",
+            coverPath = null,
+            pageCount = 2,
+            currentPage = 1,
+            createdAt = 1L,
+            updatedAt = 1L,
+            fileSize = 100L,
+            fileHash = "status-hash"
+        )
+        localRepository.insert(comic)
+        assertTrue(!localRepository.findById(comic.id)!!.hasBeenOpened)
+
+        localRepository.updateProgress(comic.id, 2)
+        val updated = localRepository.findById(comic.id)!!
+        assertTrue(updated.hasBeenOpened)
+        assertTrue(updated.completed)
+        assertEquals(2, updated.currentPage)
+        assertTrue(updated.lastReadAt > 0L)
+    }
 }

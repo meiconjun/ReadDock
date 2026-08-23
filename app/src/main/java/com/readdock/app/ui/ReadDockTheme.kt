@@ -8,11 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val ReadDockLightColors = lightColorScheme(
-    primary = Color(0xFF245A8D),
+    primary = Color(0xFF002FA7),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD5E7FA),
-    onPrimaryContainer = Color(0xFF001D34),
-    secondary = Color(0xFF536273),
+    primaryContainer = Color(0xFFDCE5FF),
+    onPrimaryContainer = Color(0xFF001452),
+    secondary = Color(0xFF5D6472),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFD7E3F2),
     onSecondaryContainer = Color(0xFF101C29),
@@ -36,10 +36,10 @@ private val ReadDockLightColors = lightColorScheme(
 )
 
 private val ReadDockDarkColors = darkColorScheme(
-    primary = Color(0xFFA9C9F0),
-    onPrimary = Color(0xFF003257),
-    primaryContainer = Color(0xFF064B78),
-    onPrimaryContainer = Color(0xFFD5E7FA),
+    primary = Color(0xFFB9C7FF),
+    onPrimary = Color(0xFF001452),
+    primaryContainer = Color(0xFF1F3F9E),
+    onPrimaryContainer = Color(0xFFDCE5FF),
     secondary = Color(0xFFBBC7D6),
     onSecondary = Color(0xFF25313E),
     secondaryContainer = Color(0xFF3B4857),

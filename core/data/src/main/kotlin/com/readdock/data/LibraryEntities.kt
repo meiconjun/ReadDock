@@ -97,5 +97,16 @@ data class LocalComicEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val fileSize: Long,
-    val fileHash: String
+    val fileHash: String,
+    val hasBeenOpened: Boolean = false,
+    val completed: Boolean = false,
+    val lastReadAt: Long = 0L,
+    val categoryIds: String = ""
+)
+
+@Entity(tableName = "local_categories")
+data class LocalCategoryEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val name: String,
+    val createdAt: Long
 )

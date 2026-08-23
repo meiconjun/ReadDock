@@ -40,16 +40,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.Image
@@ -61,6 +73,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -95,10 +109,16 @@ import com.readdock.app.MainViewModel
 import com.readdock.app.MessageTone
 import com.readdock.app.UiMessage
 import com.readdock.app.LocalImportStatus
+import com.readdock.app.LibraryTab
+import com.readdock.app.LocalFilter
+import com.readdock.app.LocalSort
+import com.readdock.app.LocalViewMode
+import com.readdock.app.OnlineShelfSection
 import com.readdock.app.WebReaderLoadStatus
 import com.readdock.app.local.LocalReaderScreen
 import com.readdock.app.reader.ZoomableReaderImage
 import com.readdock.data.LocalComic
+import com.readdock.data.LocalCategory
 import com.readdock.data.LibraryComic
 import com.readdock.data.ReadingHistoryItem
 import com.readdock.source.api.Chapter
@@ -121,6 +141,7 @@ fun ReadDockApp() {
     val libraryItems by viewModel.libraryItems.collectAsStateWithLifecycle()
     val readingHistory by viewModel.readingHistory.collectAsStateWithLifecycle()
     val localComics by viewModel.localComics.collectAsStateWithLifecycle()
+    val localCategories by viewModel.localCategories.collectAsStateWithLifecycle()
     val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
     val savedIds by viewModel.savedIds.collectAsStateWithLifecycle()
 
@@ -218,10 +239,18 @@ fun ReadDockApp() {
                         label = { Text("发现") }
                     )
                     NavigationBarItem(
-                        selected = viewModel.screen == AppScreen.LIBRARY,
+                        selected = viewModel.screen == AppScreen.LIBRARY &&
+                            viewModel.libraryTab == LibraryTab.ONLINE,
                         onClick = viewModel::showLibrary,
                         icon = { Icon(Icons.Default.Bookmark, contentDescription = "书架") },
                         label = { Text("书架") }
+                    )
+                    NavigationBarItem(
+                        selected = viewModel.screen == AppScreen.LIBRARY &&
+                            viewModel.libraryTab == LibraryTab.LOCAL,
+                        onClick = viewModel::showLocalLibrary,
+                        icon = { Icon(Icons.Default.MenuBook, contentDescription = "本地") },
+                        label = { Text("本地") }
                     )
                     NavigationBarItem(
                         selected = viewModel.screen == AppScreen.SOURCES,
@@ -235,7 +264,14 @@ fun ReadDockApp() {
     ) { padding ->
         when (viewModel.screen) {
             AppScreen.SEARCH -> SearchScreen(viewModel, padding)
-            AppScreen.LIBRARY -> LibraryScreen(viewModel, libraryItems, readingHistory, localComics, padding)
+            AppScreen.LIBRARY -> LibraryScreen(
+                viewModel,
+                libraryItems,
+                readingHistory,
+                localComics,
+                localCategories,
+                padding
+            )
             AppScreen.SOURCES -> SourcesScreen(viewModel, sourceHealth, padding)
             AppScreen.DETAIL -> DetailScreen(viewModel, savedIds, padding)
             AppScreen.READER -> ReaderScreen(viewModel, padding)
@@ -645,7 +681,11 @@ private fun SearchScreen(viewModel: MainViewModel, padding: PaddingValues) {
                 ScreenSectionHeading("搜索结果", "${viewModel.results.size} 条结果 · 第 ${viewModel.searchPage} 页")
             }
             items(viewModel.results, key = { comicUiKey(it) }) { comic ->
-                ComicRow(comic = comic, onClick = { viewModel.openComic(comic) })
+                ComicRow(
+                    comic = comic,
+                    sourceLabel = viewModel.sourceLabel(comic.sourceId),
+                    onClick = { viewModel.openComic(comic) }
+                )
             }
         }
         item {
@@ -689,9 +729,17 @@ private fun LibraryScreen(
     libraryItems: List<LibraryComic>,
     readingHistory: List<ReadingHistoryItem>,
     localComics: List<LocalComic>,
+    localCategories: List<LocalCategory>,
     padding: PaddingValues
 ) {
     var pendingDelete by remember { mutableStateOf<LocalComic?>(null) }
+    var pendingDeleteCategory by remember { mutableStateOf<LocalCategory?>(null) }
+    var assigningComic by remember { mutableStateOf<LocalComic?>(null) }
+    var renamingCategory by remember { mutableStateOf<LocalCategory?>(null) }
+    var showCategoryManager by remember { mutableStateOf(false) }
+    var showClearHistory by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
     val singlePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { viewModel.importLocalFiles(listOf(it)) } }
@@ -702,159 +750,372 @@ private fun LibraryScreen(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri -> uri?.let(viewModel::importLocalFolder) }
 
+    val activeCategory = localCategories.firstOrNull { it.id == viewModel.selectedLocalCategoryId }
+    val filteredLocalComics = localComics.filter { comic ->
+        val matchesStatus = when (viewModel.localFilter) {
+            LocalFilter.ALL -> true
+            LocalFilter.UNREAD -> !comic.hasBeenOpened
+            LocalFilter.READING -> comic.hasBeenOpened && !comic.completed
+            LocalFilter.COMPLETED -> comic.completed
+        }
+        val matchesCategory = activeCategory == null || activeCategory.id in comic.categoryIds
+        matchesStatus && matchesCategory
+    }
+    val localComparator = when (viewModel.localSort) {
+        LocalSort.RECENT_READ -> compareBy<LocalComic> { it.lastReadAt }.thenBy { it.updatedAt }
+        LocalSort.RECENT_ADDED -> compareBy { it.createdAt }
+        LocalSort.TITLE -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+        LocalSort.FILE_NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.fileName }
+        LocalSort.PROGRESS -> compareBy<LocalComic> {
+            it.currentPage.toFloat() / it.pageCount.coerceAtLeast(1).toFloat()
+        }
+    }
+    val sortedLocalComics = filteredLocalComics.sortedWith(
+        if (viewModel.localSortAscending) localComparator else localComparator.reversed()
+    )
+    val localRows = if (viewModel.localViewMode == LocalViewMode.GRID) {
+        sortedLocalComics.chunked(2)
+    } else {
+        sortedLocalComics.map { listOf(it) }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
-            .padding(horizontal = 16.dp)
-            .padding(top = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(bottom = 16.dp)
+            .padding(padding),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 18.dp, end = 16.dp, bottom = 32.dp)
     ) {
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    if (viewModel.libraryTab == LibraryTab.ONLINE) "书架" else "本地漫画",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    if (viewModel.libraryTab == LibraryTab.ONLINE) {
+                        "收藏和阅读历史会按数据源分别保存，阅读位置会自动恢复。"
+                    } else {
+                        "本地文件只保存在设备内，支持分类、排序、筛选和继续阅读。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (viewModel.libraryTab == LibraryTab.ONLINE) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
-                    Text("我的书架", style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        "管理本地漫画、在线收藏和最近阅读。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    ShelfSegment(
+                        firstLabel = "收藏",
+                        secondLabel = "历史",
+                        firstSelected = viewModel.onlineShelfSection == OnlineShelfSection.FAVORITES,
+                        onFirst = { viewModel.selectOnlineShelfSection(OnlineShelfSection.FAVORITES) },
+                        onSecond = { viewModel.selectOnlineShelfSection(OnlineShelfSection.HISTORY) },
+                        modifier = Modifier.weight(1f)
                     )
-                    Button(
-                        onClick = { singlePicker.launch(arrayOf("*/*")) },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                    if (viewModel.onlineShelfSection == OnlineShelfSection.HISTORY &&
+                        readingHistory.isNotEmpty()
                     ) {
-                        Text("导入本地文件")
+                        TextButton(onClick = { showClearHistory = true }) { Text("清空") }
                     }
                 }
             }
-        }
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+            item { StatusMessage(viewModel) }
+            if (viewModel.onlineShelfSection == OnlineShelfSection.FAVORITES) {
+                if (libraryItems.isEmpty()) {
+                    item {
+                        EmptyStateCard(
+                            title = "还没有收藏",
+                            message = "在在线漫画详情页点按书签，收藏会出现在这里。"
+                        )
+                    }
+                } else {
+                    items(libraryItems, key = { comicUiKey(it.sourceId, it.comicId) }) { comic ->
+                        val summary = comic.toSummary()
+                        ComicRow(
+                            comic = summary,
+                            sourceLabel = viewModel.sourceLabel(summary.sourceId),
+                            onClick = { viewModel.openComic(summary) }
+                        )
+                    }
+                }
+            } else if (readingHistory.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        title = "还没有阅读历史",
+                        message = "打开在线章节后，当前章节、页码和最后阅读时间会显示在这里。"
+                    )
+                }
+            } else {
+                items(
+                    readingHistory,
+                    key = { "${it.sourceId}::${it.comicId}::${it.chapterId}" }
+                ) { history ->
+                    HistoryShelfRow(
+                        history = history,
+                        sourceLabel = viewModel.sourceLabel(history.sourceId),
+                        onClick = { viewModel.openHistory(history) }
+                    )
+                }
+            }
+        } else {
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { singlePicker.launch(arrayOf("*/*")) },
+                                modifier = Modifier.weight(1f),
+                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                            ) { Text("导入本地文件") }
+                            OutlinedButton(
+                                onClick = { showCategoryManager = true },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("管理分类") }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { multipleImagePicker.launch("image/*") },
+                                modifier = Modifier.weight(1f),
+                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                            ) { Text("多选图片") }
+                            OutlinedButton(
+                                onClick = { folderPicker.launch(null) },
+                                modifier = Modifier.weight(1f),
+                                enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
+                            ) { Text("导入文件夹") }
+                        }
+                    }
+                }
+            }
+            item {
+                when (viewModel.localImportState.status) {
+                    LocalImportStatus.LOADING -> Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(viewModel.localImportState.message ?: "正在导入…")
+                        }
+                    }
+                    LocalImportStatus.SUCCESS,
+                    LocalImportStatus.EMPTY -> viewModel.localImportState.message?.let {
+                        InlineMessageCard(it, MessageTone.INFO)
+                    }
+                    LocalImportStatus.ERROR -> viewModel.localImportState.message?.let {
+                        InlineMessageCard(it, MessageTone.ERROR)
+                    }
+                    LocalImportStatus.IDLE -> Unit
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("更多导入方式", style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Text("本地漫画", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = { viewModel.selectLocalViewMode(LocalViewMode.LIST) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (viewModel.localViewMode == LocalViewMode.LIST) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                MaterialTheme.shapes.small
+                            )
                     ) {
-                        OutlinedButton(
-                            onClick = { multipleImagePicker.launch("image/*") },
-                            modifier = Modifier.weight(1f),
-                            enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                        ) { Text("多选图片") }
-                        OutlinedButton(
-                            onClick = { folderPicker.launch(null) },
-                            modifier = Modifier.weight(1f),
-                            enabled = viewModel.localImportState.status != LocalImportStatus.LOADING
-                        ) { Text("导入文件夹") }
+                        Icon(
+                            Icons.Default.ViewList,
+                            contentDescription = "列表视图",
+                            tint = if (viewModel.localViewMode == LocalViewMode.LIST) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    IconButton(
+                        onClick = { viewModel.selectLocalViewMode(LocalViewMode.GRID) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (viewModel.localViewMode == LocalViewMode.GRID) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                MaterialTheme.shapes.small
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.GridView,
+                            contentDescription = "网格视图",
+                            tint = if (viewModel.localViewMode == LocalViewMode.GRID) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                     }
                 }
             }
-        }
-        item {
-            when (viewModel.localImportState.status) {
-                LocalImportStatus.LOADING -> Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.size(8.dp))
-                        Text(viewModel.localImportState.message ?: "正在导入…")
-                    }
-                }
-                LocalImportStatus.SUCCESS -> viewModel.localImportState.message?.let {
-                    InlineMessageCard(it, MessageTone.INFO)
-                }
-                LocalImportStatus.EMPTY -> viewModel.localImportState.message?.let {
-                    InlineMessageCard(it, MessageTone.INFO)
-                }
-                LocalImportStatus.ERROR -> viewModel.localImportState.message?.let {
-                    InlineMessageCard(it, MessageTone.ERROR)
-                }
-                LocalImportStatus.IDLE -> Unit
-            }
-        }
-        item {
-            Spacer(Modifier.height(8.dp))
-            ScreenSectionHeading("本地漫画")
-        }
-        if (localComics.isEmpty()) {
             item {
-                EmptyStateCard(
-                    title = "还没有本地漫画",
-                    message = "可以导入单个文件、多选图片或整个图片文件夹。"
-                )
-            }
-        } else {
-            items(localComics, key = { "local::${it.id}" }) { comic ->
-                LocalComicRow(
-                    comic = comic,
-                    onClick = { viewModel.openLocalComic(comic) },
-                    onDelete = { pendingDelete = comic }
-                )
-            }
-        }
-        item {
-            Spacer(Modifier.height(20.dp))
-            ScreenSectionHeading("在线收藏")
-        }
-        if (libraryItems.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    title = "还没有收藏",
-                    message = "在线漫画收藏会独立保存在这里。"
-                )
-            }
-        } else {
-            items(libraryItems, key = { comicUiKey(it.sourceId, it.comicId) }) { comic ->
-                val summary = comic.toSummary()
-                ComicRow(comic = summary, onClick = { viewModel.openComic(summary) })
-            }
-        }
-        item {
-            Spacer(Modifier.height(12.dp))
-            ScreenSectionHeading("阅读历史")
-        }
-        if (readingHistory.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    title = "还没有阅读记录",
-                    message = "打开章节后，最近阅读的章节和进度会显示在这里。"
-                )
-            }
-        } else {
-            items(
-                readingHistory,
-                key = { "${it.sourceId}::${it.comicId}::${it.chapterId}" }
-            ) { history ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.openComic(history.toSummary()) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
-                    ListItem(
-                        headlineContent = { Text(history.comicTitle) },
-                        supportingContent = {
-                            Text(
-                                "第 ${history.chapterNumber} 话 ${history.chapterTitle} · " +
-                                    "第 ${history.currentPage}/${history.totalPages} 页"
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.selectLocalFilter(
+                                nextLocalFilter(viewModel.localFilter)
                             )
                         },
-                        trailingContent = {
-                            Text(if (history.completed) "已读完" else "继续")
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.FilterList, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text(localFilterLabel(viewModel.localFilter))
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { sortMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Sort, contentDescription = null)
+                            Spacer(Modifier.size(6.dp))
+                            Text(localSortLabel(viewModel.localSort))
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuExpanded,
+                            onDismissRequest = { sortMenuExpanded = false }
+                        ) {
+                            LocalSort.values().forEach { sort ->
+                                DropdownMenuItem(
+                                    text = { Text(localSortLabel(sort)) },
+                                    onClick = {
+                                        viewModel.selectLocalSort(sort)
+                                        sortMenuExpanded = false
+                                    },
+                                    trailingIcon = {
+                                        if (viewModel.localSort == sort) {
+                                            Icon(Icons.Default.Check, contentDescription = "当前排序")
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    IconButton(
+                        onClick = viewModel::toggleLocalSortDirection,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Text(if (viewModel.localSortAscending) "升" else "降")
+                    }
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { categoryMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(activeCategory?.name ?: "全部分类")
+                        }
+                        DropdownMenu(
+                            expanded = categoryMenuExpanded,
+                            onDismissRequest = { categoryMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("全部分类") },
+                                onClick = {
+                                    viewModel.selectLocalCategory(null)
+                                    categoryMenuExpanded = false
+                                }
+                            )
+                            localCategories.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category.name) },
+                                    onClick = {
+                                        viewModel.selectLocalCategory(category.id)
+                                        categoryMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        "${sortedLocalComics.size}/${localComics.size}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (sortedLocalComics.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        title = if (localComics.isEmpty()) "还没有本地漫画" else "没有符合条件的漫画",
+                        message = if (localComics.isEmpty()) {
+                            "可以导入单个文件、多选图片或整个图片文件夹。"
+                        } else {
+                            "可以切换筛选、分类或排序条件。"
                         }
                     )
+                }
+            } else {
+                items(
+                    localRows,
+                    key = { row -> row.joinToString("|") { comic -> "local::${comic.id}" } }
+                ) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { comic ->
+                            if (viewModel.localViewMode == LocalViewMode.GRID) {
+                                LocalComicGridCard(
+                                    comic = comic,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { viewModel.openLocalComic(comic) },
+                                    onAssign = { assigningComic = comic },
+                                    onDelete = { pendingDelete = comic }
+                                )
+                            } else {
+                                LocalComicListCard(
+                                    comic = comic,
+                                    onClick = { viewModel.openLocalComic(comic) },
+                                    onAssign = { assigningComic = comic },
+                                    onDelete = { pendingDelete = comic }
+                                )
+                            }
+                        }
+                        if (viewModel.localViewMode == LocalViewMode.GRID && row.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -876,7 +1137,348 @@ private fun LibraryScreen(
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
         )
     }
+
+    if (showCategoryManager) {
+        CategoryManagerDialog(
+            categories = localCategories,
+            onDismiss = { showCategoryManager = false },
+            onCreate = viewModel::createLocalCategory,
+            onRename = {
+                showCategoryManager = false
+                renamingCategory = it
+            },
+            onDelete = {
+                showCategoryManager = false
+                pendingDeleteCategory = it
+            }
+        )
+    }
+    renamingCategory?.let { category ->
+        RenameCategoryDialog(
+            category = category,
+            onDismiss = { renamingCategory = null },
+            onConfirm = { name ->
+                viewModel.renameLocalCategory(category, name)
+                renamingCategory = null
+            }
+        )
+    }
+    pendingDeleteCategory?.let { category ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteCategory = null },
+            title = { Text("删除分类？") },
+            text = { Text("删除“${category.name}”不会删除漫画，只会移除分类归属。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteLocalCategory(category)
+                    pendingDeleteCategory = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteCategory = null }) { Text("取消") }
+            }
+        )
+    }
+    assigningComic?.let { comic ->
+        LocalCategoryAssignmentDialog(
+            comic = comic,
+            categories = localCategories,
+            onDismiss = { assigningComic = null },
+            onToggle = { category, included ->
+                viewModel.setLocalCategory(comic, category, included)
+            }
+        )
+    }
+    if (showClearHistory) {
+        AlertDialog(
+            onDismissRequest = { showClearHistory = false },
+            title = { Text("清空阅读历史？") },
+            text = { Text("在线阅读历史和进度记录会被删除，收藏不会受到影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearOnlineHistory()
+                    showClearHistory = false
+                }) { Text("清空", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistory = false }) { Text("取消") }
+            }
+        )
+    }
 }
+
+@Composable
+private fun ShelfSegment(
+    firstLabel: String,
+    secondLabel: String,
+    firstSelected: Boolean,
+    onFirst: () -> Unit,
+    onSecond: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TabRow(
+        selectedTabIndex = if (firstSelected) 0 else 1,
+        modifier = modifier.fillMaxWidth(),
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.primary
+    ) {
+        Tab(
+            selected = firstSelected,
+            onClick = onFirst,
+            modifier = Modifier.heightIn(min = 48.dp),
+            text = { Text(firstLabel) }
+        )
+        Tab(
+            selected = !firstSelected,
+            onClick = onSecond,
+            modifier = Modifier.heightIn(min = 48.dp),
+            text = { Text(secondLabel) }
+        )
+    }
+}
+
+@Composable
+private fun HistoryShelfRow(
+    history: ReadingHistoryItem,
+    sourceLabel: String,
+    onClick: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        ListItem(
+            headlineContent = { Text(history.comicTitle) },
+            supportingContent = {
+                Text(
+                    "来源 · $sourceLabel\n" +
+                        "第 ${history.chapterNumber} 话 · ${history.chapterTitle}\n" +
+                        "第 ${history.currentPage}/${history.totalPages} 页 · ${readingTimeLabel(history.lastReadAt)}"
+                )
+            },
+            trailingContent = {
+                Text(if (history.completed) "已读完" else "继续", color = MaterialTheme.colorScheme.primary)
+            }
+        )
+    }
+}
+
+@Composable
+private fun LocalComicListCard(
+    comic: LocalComic,
+    onClick: () -> Unit,
+    onAssign: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        ListItem(
+            leadingContent = { LocalCover(comic.coverPath, comic.title, Modifier.size(64.dp)) },
+            headlineContent = { Text(comic.title) },
+            supportingContent = {
+                Text(
+                    "${localStatusLabel(comic)} · ${comic.format} · " +
+                        "${comic.currentPage.coerceIn(1, comic.pageCount.coerceAtLeast(1))}/${comic.pageCount} 页 · " +
+                        localLastReadLabel(comic)
+                )
+            },
+            trailingContent = {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    IconButton(onClick = onAssign) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "管理分类")
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "删除本地漫画")
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun LocalComicGridCard(
+    comic: LocalComic,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    onAssign: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(modifier = modifier.clickable(onClick = onClick)) {
+        Column {
+            LocalCover(comic.coverPath, comic.title, Modifier.fillMaxWidth().height(180.dp))
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(comic.title, maxLines = 2, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "${localStatusLabel(comic)} · ${comic.currentPage}/${comic.pageCount} 页",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    IconButton(onClick = onAssign) { Icon(Icons.Default.MoreVert, contentDescription = "管理分类") }
+                    IconButton(onClick = onDelete) { Icon(Icons.Default.DeleteOutline, contentDescription = "删除本地漫画") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryManagerDialog(
+    categories: List<LocalCategory>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+    onRename: (LocalCategory) -> Unit,
+    onDelete: (LocalCategory) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("管理分类") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("新分类名称") }
+                )
+                Button(
+                    onClick = {
+                        onCreate(name)
+                        name = ""
+                    },
+                    enabled = name.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("创建分类") }
+                if (categories.isEmpty()) {
+                    Text("还没有分类", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    categories.forEach { category ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Text(category.name, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { onRename(category) }) {
+                                Icon(Icons.Default.Edit, contentDescription = "重命名分类")
+                            }
+                            IconButton(onClick = { onDelete(category) }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "删除分类")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+@Composable
+private fun RenameCategoryDialog(
+    category: LocalCategory,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember(category.id) { mutableStateOf(category.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重命名分类") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("分类名称") }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun LocalCategoryAssignmentDialog(
+    comic: LocalComic,
+    categories: List<LocalCategory>,
+    onDismiss: () -> Unit,
+    onToggle: (LocalCategory, Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("设置分类") },
+        text = {
+            if (categories.isEmpty()) {
+                Text("请先创建分类。")
+            } else {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    categories.forEach { category ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggle(category, category.id !in comic.categoryIds) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = category.id in comic.categoryIds,
+                                onCheckedChange = { onToggle(category, it) }
+                            )
+                            Text(category.name)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+private fun nextLocalFilter(filter: LocalFilter): LocalFilter = when (filter) {
+    LocalFilter.ALL -> LocalFilter.UNREAD
+    LocalFilter.UNREAD -> LocalFilter.READING
+    LocalFilter.READING -> LocalFilter.COMPLETED
+    LocalFilter.COMPLETED -> LocalFilter.ALL
+}
+
+private fun localFilterLabel(filter: LocalFilter): String = when (filter) {
+    LocalFilter.ALL -> "全部"
+    LocalFilter.UNREAD -> "未读"
+    LocalFilter.READING -> "阅读中"
+    LocalFilter.COMPLETED -> "已读"
+}
+
+private fun localSortLabel(sort: LocalSort): String = when (sort) {
+    LocalSort.RECENT_READ -> "最近阅读"
+    LocalSort.RECENT_ADDED -> "最近添加"
+    LocalSort.TITLE -> "标题"
+    LocalSort.FILE_NAME -> "文件名"
+    LocalSort.PROGRESS -> "阅读进度"
+}
+
+private fun localStatusLabel(comic: LocalComic): String = when {
+    comic.completed -> "已读"
+    !comic.hasBeenOpened -> "未读"
+    else -> "阅读中"
+}
+
+private fun localLastReadLabel(comic: LocalComic): String = when {
+    !comic.hasBeenOpened || comic.lastReadAt <= 0L -> "未打开"
+    else -> readingTimeLabel(comic.lastReadAt)
+}
+
+private fun readingTimeLabel(timestamp: Long): String =
+    if (timestamp <= 0L) "未记录时间" else java.text.DateFormat.getDateTimeInstance(
+        java.text.DateFormat.SHORT,
+        java.text.DateFormat.SHORT
+    ).format(java.util.Date(timestamp))
 
 @Composable
 private fun LocalComicRow(
@@ -904,7 +1506,7 @@ private fun LocalComicRow(
 }
 
 @Composable
-private fun LocalCover(path: String?, title: String) {
+private fun LocalCover(path: String?, title: String, modifier: Modifier = Modifier.size(54.dp)) {
     val bitmap by produceState<Bitmap?>(initialValue = null, key1 = path) {
         value = withContext(Dispatchers.IO) { decodeCover(path) }
     }
@@ -912,16 +1514,20 @@ private fun LocalCover(path: String?, title: String) {
         Image(
             bitmap = bitmap!!.asImageBitmap(),
             contentDescription = "${title}封面",
-            modifier = Modifier.size(54.dp),
+            modifier = modifier,
             contentScale = ContentScale.Crop
         )
     } else {
         Box(
-            modifier = Modifier
-                .size(54.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+            modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = androidx.compose.ui.Alignment.Center
-        ) { Text(title.take(1), style = MaterialTheme.typography.titleLarge) }
+        ) {
+            Icon(
+                Icons.Default.MenuBook,
+                contentDescription = "无封面",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 
@@ -1278,7 +1884,11 @@ private fun DetailScreen(
                             Text(detail.summary.title, style = MaterialTheme.typography.headlineSmall)
                             Text("作者：${detail.author}")
                             Text(
-                                detail.summary.tags.joinToString(" · ").ifBlank { detail.summary.sourceId },
+                                "来源：${viewModel.sourceLabel(detail.summary.sourceId)}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                detail.summary.tags.joinToString(" · ").ifBlank { "暂无标签" },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -1377,6 +1987,10 @@ private fun ReaderScreen(viewModel: MainViewModel, padding: PaddingValues) {
     val restoredPosition = remember(viewModel.selectedChapter?.id) { mutableStateOf(false) }
     val previousChapter = viewModel.previousChapter()
     val nextChapter = viewModel.nextChapter()
+
+    DisposableEffect(viewModel.selectedChapter?.id) {
+        onDispose { viewModel.flushReadingProgress() }
+    }
 
     LaunchedEffect(
         viewModel.selectedChapter?.id,
@@ -1618,7 +2232,11 @@ private fun ReaderControls(
 }
 
 @Composable
-private fun ComicRow(comic: ComicSummary, onClick: () -> Unit) {
+private fun ComicRow(
+    comic: ComicSummary,
+    sourceLabel: String,
+    onClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1626,7 +2244,14 @@ private fun ComicRow(comic: ComicSummary, onClick: () -> Unit) {
     ) {
         ListItem(
             headlineContent = { Text(comic.title) },
-            supportingContent = { Text(comic.tags.joinToString(" · ")) },
+            supportingContent = {
+                Text(
+                    buildList {
+                        add("来源 · $sourceLabel")
+                        comic.tags.joinToString(" · ").takeIf { it.isNotBlank() }?.let(::add)
+                    }.joinToString("\n")
+                )
+            },
             leadingContent = {
                 Box(
                     modifier = Modifier
@@ -1728,7 +2353,14 @@ private fun StatusMessage(viewModel: MainViewModel) {
                 Box(modifier = Modifier.weight(1f)) {
                     ErrorNotice(viewModel.errorMessage)
                 }
-                TextButton(onClick = viewModel::retrySearch, enabled = !viewModel.isLoading) {
+                TextButton(
+                    onClick = if (viewModel.canRetryComic) {
+                        viewModel::retryOpenComic
+                    } else {
+                        viewModel::retrySearch
+                    },
+                    enabled = !viewModel.isLoading
+                ) {
                     Text("重试")
                 }
             }

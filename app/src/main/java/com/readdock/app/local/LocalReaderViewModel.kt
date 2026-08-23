@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -61,6 +62,7 @@ class LocalReaderViewModel(
         private set
 
     private var pageJob: Job? = null
+    private var progressJob: Job? = null
     private var pageRequestId = 0L
     private val progressMutex = Mutex()
     private val bitmapDecoder = SampledBitmapDecoder(ReaderBitmapCache())
@@ -170,8 +172,10 @@ class LocalReaderViewModel(
      * Serialising writes also prevents an older page from racing a newer page.
      */
     private fun persistProgress(book: LocalComic, pageNumber: Int) {
-        viewModelScope.launch {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
             try {
+                delay(250)
                 progressMutex.withLock {
                     withContext(NonCancellable + ioDispatcher) {
                         repository.updateProgress(book.id, pageNumber)
@@ -185,6 +189,23 @@ class LocalReaderViewModel(
                         progressErrorMessage = "阅读进度保存失败，请稍后重试"
                     )
                 }
+            }
+        }
+    }
+
+    /** Save the last visible page when the reader leaves without waiting for debounce. */
+    fun flushProgress() {
+        val book = state.comic ?: return
+        val page = state.currentPage
+        progressJob?.cancel()
+        progressJob = null
+        viewModelScope.launch(NonCancellable) {
+            try {
+                progressMutex.withLock {
+                    withContext(ioDispatcher) { repository.updateProgress(book.id, page) }
+                }
+            } catch (_: Throwable) {
+                // A final save must not block back navigation.
             }
         }
     }
@@ -258,6 +279,7 @@ class LocalReaderViewModel(
     override fun onCleared() {
         pageRequestId += 1
         pageJob?.cancel()
+        progressJob?.cancel()
         bitmapDecoder.clear()
         super.onCleared()
     }
