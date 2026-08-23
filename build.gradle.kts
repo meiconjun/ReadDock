@@ -10,5 +10,5 @@ plugins {
 
 allprojects {
     group = "io.readdock"
-    version = "0.5.0-beta02"
+    version = "0.5.0-beta04"
 }
